@@ -1,0 +1,32 @@
+# Segredos — nunca no Git
+.env
+.env.*
+!.env.example
+tokens/
+*.pem
+*.key
+
+# Dados locais e saídas
+dados/
+saida/
+work/
+*.db
+*.db-*
+*.mp4
+*.wav
+*.mp3
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini

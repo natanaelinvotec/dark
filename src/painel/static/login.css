@@ -1,0 +1,6 @@
+body.mg-login { padding: 16px; display: flex; align-items: center; justify-content: center; }
+.mg-caixa-login { width: 100%; max-width: 380px; }
+.mg-caixa-login .mg-logo { margin-bottom: 16px; }
+.mg-caixa-login .mg-h1 { font-size: 24px; }
+.mg-caixa-login .mg-erro { min-height: 20px; margin-top: 10px; }
+.mg-caixa-login .mg-btn { width: 100%; margin-top: 6px; }

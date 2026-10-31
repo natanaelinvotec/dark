@@ -1,0 +1,37 @@
+# Canal de curiosidades (ciência, espaço, história). Imagens vêm dos bancos com licença comercial.
+
+slug: curiosidades
+nome: Curiosidades
+cor: "#0E9A82"
+enabled: true
+idioma: pt-BR
+descricao: Ciência, espaço e história em menos de 1 minuto
+pasta: Canal-Curiosidades
+horarios: ["12:00", "18:30"]
+
+formato:
+  short_segundos: [40, 60]
+  tiktok_segundos: [61, 85]
+  palavras_min: 120
+  palavras_max: 165
+  cenas_min: 8
+  cenas_max: 14
+  janelas_min: 0
+  janelas_max: 0
+
+producao:
+  quadros: banco                # Pexels + Pixabay
+  gancho: nenhum
+  voz: tts
+
+busca_visual_padrao: "night sky stars"
+
+roteiro:
+  instrucoes: >
+    Fatos verificáveis, com pelo menos duas fontes confiáveis.
+    Varie o formato (lista, mito ou verdade, pergunta e resposta, história).
+    Cada cena traz um termo de busca visual em inglês, concreto e fotografável.
+
+estilo_visual:
+  prompt_base: ""
+  evitar: ["pessoas reconhecíveis", "logotipos"]

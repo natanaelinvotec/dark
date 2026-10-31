@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar no Estúdio de Canais</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&amp;family=Manrope:wght@500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/login.css">
+<script src="/static/login.js" defer></script>
+</head>
+<body class="mg-login">
+<main class="mg-card mg-caixa-login">
+  <div class="mg-logo" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></div>
+  <h1 class="mg-h1">Estúdio de Canais</h1>
+  <p class="mg-sub">Painel do dono. Acesso só pela sua rede Tailscale.</p>
+  <form id="form-login" novalidate>
+    <div class="mg-campo">
+      <label for="senha">Senha</label>
+      <input class="mg-input" id="senha" name="senha" type="password" autocomplete="current-password" required aria-describedby="erro-login">
+    </div>
+    <p class="mg-erro" id="erro-login" role="alert"></p>
+    <button class="mg-btn mg-pri" type="submit" id="entrar">Entrar</button>
+  </form>
+</main>
+</body>
+</html>
