@@ -4,13 +4,13 @@
 > 1.1: seis plataformas (YouTube, TikTok, Facebook, Instagram, Kwai, Snapchat) com publicação assistida; vídeos de 61–80 s; instalação com um clique no Windows.
 
 ## Premissas (já combinadas)
-1. Um único usuário (o dono). Acesso ao painel só pela rede Tailscale **e** com senha.
+1. Um único usuário (o dono). Acesso remoto ao painel por **Cloudflare Tunnel + Access** (endereço próprio, código no e-mail do dono) ou pela **Tailscale**, sempre **e** com a senha do painel. Nenhuma porta aberta no roteador.
 2. Arquivos de trabalho na pasta do **Google Drive sincronizada** no PC/VPS ("Drive para computador"); o programa lê e grava como pasta local.
 3. Sem Firebase. Estado em **SQLite**.
 4. Publicação v1 = **pacote de agendamento** (pasta do dia + CSV) + **publicação assistida** na tela Plataformas: o painel baixa o MP4, copia a legenda no formato de cada rede e abre a página oficial de envio; o dono sobe e cola o link. APIs de publicação só depois de auditoria/aprovação de cada plataforma.
 5. Quadros do canal bíblico e ganchos animados são **feitos à mão** (assinatura Google AI Pro, sem API); o pipeline prepara os prompts e espera os arquivos.
 6. Duração-alvo **61–80 s**: rende em todas as redes (TikTok ≥ 60 s; Reels pela API ≤ 90 s; Spotlight ≥ 30 s).
-7. Roda no **PC do dono** (ligado com `iniciar.bat`); celular acessa pela Tailscale.
+7. Roda no **PC do dono** (ligado com `iniciar.bat`); qualquer navegador acessa pelo endereço online (`online.bat`) enquanto o PC estiver ligado.
 
 ## Mapa de módulos
 

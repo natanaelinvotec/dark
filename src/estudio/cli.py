@@ -85,6 +85,7 @@ def cmd_senha(_: argparse.Namespace) -> int:
 
 
 _LINHA_ENV = re.compile(r"^\s*([A-Z][A-Z0-9_]*)\s*=")
+_ENDERECO = re.compile(r"^https://[a-z0-9-]+(\.[a-z0-9-]+)+$")
 CHAVES_OPCIONAIS = (
     ("GEMINI_API_KEY", "Chave da Gemini API (aistudio.google.com)"),
     ("AZURE_TTS_CHAVE", "Chave da voz Azure"),
@@ -112,6 +113,8 @@ def configurar(
     dados: str | None = None,
     senha: str | None = None,
     chaves: dict[str, str] | None = None,
+    online: bool | None = None,
+    endereco: str | None = None,
 ) -> list[str]:
     """Cria o .env (se faltar) e grava só o que foi pedido. Devolve o que mudou (sem valores)."""
     from painel.seguranca import gerar_hash
@@ -131,6 +134,17 @@ def configurar(
     for chave, valor in (chaves or {}).items():
         if valor.strip():
             novos[chave] = valor.strip()
+    if online is not None:
+        # online = endereço https (Cloudflare): o cookie da sessão só viaja cifrado
+        valor = "1" if online else "0"
+        if atuais.get("ESTUDIO_COOKIE_SEGURO", "0") != valor:
+            novos["ESTUDIO_COOKIE_SEGURO"] = valor
+    if endereco:
+        endereco = endereco.strip().rstrip("/")
+        if not _ENDERECO.match(endereco):
+            raise ValueError("endereço precisa ser https://algo.seudominio (sem caminho)")
+        if atuais.get("ESTUDIO_ENDERECO") != endereco:
+            novos["ESTUDIO_ENDERECO"] = endereco
     if novos:
         gravar_no_env(env, novos)
     return sorted(novos)
@@ -140,9 +154,11 @@ def cmd_configurar(args: argparse.Namespace) -> int:
     env = RAIZ / ".env"
     atuais = ler_dotenv(env) if env.exists() else ler_dotenv(RAIZ / ".env.example")
     interativo = sys.stdin.isatty()
+    # --online/--so-local/--endereco mexem só no acesso: não repete as outras perguntas
+    so_acesso = args.online or args.so_local or bool(args.endereco)
 
     dados = args.dados
-    if dados is None and interativo:
+    if dados is None and interativo and not so_acesso:
         padrao = atuais.get("ESTUDIO_DADOS", "")
         resposta = input(f"Pasta do Google Drive para os vídeos [{padrao}]: ").strip()
         dados = resposta or None
@@ -157,13 +173,24 @@ def cmd_configurar(args: argparse.Namespace) -> int:
             return 1
 
     chaves: dict[str, str] = {}
-    if interativo:
+    if interativo and not so_acesso:
         for chave, rotulo in CHAVES_OPCIONAIS:
             if not atuais.get(chave):
                 chaves[chave] = getpass.getpass(f"{rotulo} (Enter para pular; não aparece): ")
 
-    mudou = configurar(RAIZ, dados=dados, senha=senha, chaves=chaves)
+    online = True if args.online else (False if args.so_local else None)
+    endereco = args.endereco
+    if args.online and not endereco and not atuais.get("ESTUDIO_ENDERECO") and interativo:
+        endereco = input("Endereço online do painel (ex.: https://painel.seudominio.com.br): ")
+    try:
+        mudou = configurar(RAIZ, dados=dados, senha=senha, chaves=chaves, online=online,
+                           endereco=(endereco or "").lower() or None)
+    except ValueError as erro:
+        print(f"Não salvei: {erro}", file=sys.stderr)
+        return 1
     print("Nada mudou no .env." if not mudou else "Atualizado no .env: " + ", ".join(mudou))
+    if online:
+        print("No PC, abra também pelo endereço online: o cookie seguro só viaja por https.")
     return 0
 
 
@@ -242,6 +269,12 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("configurar", help="cria/ajusta o .env (segredo, senha, Drive, chaves)")
     c.add_argument("--dados", help="pasta do Google Drive, ex.: \"G:/Meu Drive/Estudio\"")
     c.add_argument("--trocar-senha", action="store_true")
+    modo = c.add_mutually_exclusive_group()
+    modo.add_argument("--online", action="store_true",
+                      help="painel aberto por endereço https (Cloudflare): cookie só por https")
+    modo.add_argument("--so-local", action="store_true",
+                      help="painel só em http://127.0.0.1 e Tailscale")
+    c.add_argument("--endereco", help="endereço online, ex.: https://painel.seudominio.com.br")
     c.set_defaults(func=cmd_configurar)
 
     p = sub.add_parser("painel", help="sobe o painel web")

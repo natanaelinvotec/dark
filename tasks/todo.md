@@ -20,6 +20,8 @@
 - [ ] **P6 Contas reais** (manual): criar perfis no TikTok (pessoal), Facebook (página/modo profissional), Instagram (profissional), Kwai e Snapchat com passkey/2FA; preencher a aba Contas.
 - [ ] **P7 Metricool** (opcional): agendar YouTube/TikTok/Facebook/Instagram pelo conector, depois de testar 1 vídeo manual em cada rede.
 - [ ] **P8 Revisar `plataformas.yaml`** a cada 90 dias (o painel avisa).
+- [~] **P9 Acesso online** (`online.bat`, `estudio configurar --online`): Cloudflare Tunnel como serviço + cookie Secure/Lax.
+- [ ] **P10 Cloudflare** (manual): domínio na Cloudflare, Access com One-time PIN só para o seu e-mail, túnel e rota Published application → http://127.0.0.1:8787.
 
 ## Fase 1 — Fundação
 - [ ] **T1 Contas** (manual): 2 canais + conta de clipping, passkey/chave física, canais criados em dias diferentes.

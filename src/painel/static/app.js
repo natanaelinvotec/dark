@@ -119,12 +119,24 @@ function aplicarEstilos(raiz) {
 async function api(caminho, opcoes = {}) {
   const cabecalhos = { "X-Estudio": "1" };
   if (opcoes.corpo !== undefined) cabecalhos["Content-Type"] = "application/json";
-  const resposta = await fetch(caminho, {
-    method: opcoes.metodo || "GET",
-    credentials: "same-origin",
-    headers: cabecalhos,
-    body: opcoes.corpo !== undefined ? JSON.stringify(opcoes.corpo) : undefined,
-  });
+  let resposta;
+  try {
+    resposta = await fetch(caminho, {
+      method: opcoes.metodo || "GET",
+      credentials: "same-origin",
+      headers: cabecalhos,
+      body: opcoes.corpo !== undefined ? JSON.stringify(opcoes.corpo) : undefined,
+    });
+  } catch {
+    /* acesso online: quando o login da Cloudflare expira, o fetch é desviado e falha aqui */
+    throw new Error(navigator.onLine
+      ? "O painel não respondeu. Recarregue a página (se estiver pelo endereço online, o login da Cloudflare pode ter expirado)."
+      : "Sem internet neste aparelho.");
+  }
+  if (resposta.redirected && !resposta.url.startsWith(location.origin)) {
+    location.reload();
+    throw new Error("Login expirado.");
+  }
   if (resposta.status === 401) {
     location.href = "/login";
     throw new Error("Sessão expirada.");

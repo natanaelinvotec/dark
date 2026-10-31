@@ -6,6 +6,13 @@ $logs = Join-Path (Get-Location) "dados\logs"
 New-Item -ItemType Directory -Force $logs | Out-Null
 $pids = Join-Path (Get-Location) "dados\processos.txt"
 
+# abre o endereço online (Cloudflare) se houver; senão o local
+$endereco = "http://127.0.0.1:8787"
+if (Test-Path ".env") {
+    $linha = Select-String -Path ".env" -Pattern '^\s*ESTUDIO_ENDERECO\s*=\s*"?(https://[^"\s]+)' | Select-Object -First 1
+    if ($linha) { $endereco = $linha.Matches[0].Groups[1].Value }
+}
+
 function Vivo($id) {
     # confere o nome também: depois de reiniciar, o Windows pode reusar o número do processo
     $p = Get-Process -Id $id -ErrorAction SilentlyContinue
@@ -16,7 +23,7 @@ if (Test-Path $pids) {
     $antigos = @((Get-Content $pids) -split " " | Where-Object { $_ })
     if ($antigos.Count -ge 1 -and (Vivo $antigos[0])) {
         Write-Host "Já está rodando. Abrindo o painel." -ForegroundColor Yellow
-        Start-Process "http://127.0.0.1:8787"
+        Start-Process $endereco
         exit 0
     }
     foreach ($id in $antigos) { taskkill /PID $id /T /F 2>$null | Out-Null }
@@ -40,5 +47,5 @@ if ($painel.HasExited) {
 if ($worker.HasExited) {
     Write-Host "O worker parou (veja dados\logs\worker-erros.log). Faltam chaves no .env? O painel segue ligado." -ForegroundColor Yellow
 }
-Start-Process "http://127.0.0.1:8787"
-Write-Host "Painel e worker rodando. Para desligar: parar.bat. Registros em dados\logs." -ForegroundColor Green
+Start-Process $endereco
+Write-Host "Painel e worker rodando em $endereco. Para desligar: parar.bat. Registros em dados\logs." -ForegroundColor Green

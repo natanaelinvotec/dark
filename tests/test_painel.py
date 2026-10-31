@@ -77,6 +77,18 @@ def test_cabecalhos_de_seguranca(cliente):
     assert r.headers["x-content-type-options"] == "nosniff"
 
 
+def test_cookie_da_sessao_e_httponly_e_lax(cliente):
+    r = cliente.post("/login", json={"senha": SENHA}, headers=H)
+    cookie = r.headers["set-cookie"].lower()
+    assert "httponly" in cookie and "samesite=lax" in cookie
+
+
+def test_cookie_seguro_quando_online(cfg_painel, canais, con):
+    online = TestClient(criar_app(dataclasses.replace(cfg_painel, cookie_seguro=True), canais))
+    r = online.post("/login", json={"senha": SENHA}, headers=H)
+    assert "secure" in r.headers["set-cookie"].lower()
+
+
 def test_config_nunca_devolve_chave(logado):
     r = logado.get("/api/config")
     assert r.status_code == 200

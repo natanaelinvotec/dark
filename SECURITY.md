@@ -6,9 +6,13 @@
 3. **O banco** (`dados/estudio.db`): fila, custos, receitas, auditoria.
 
 ## Regras do projeto
-- Painel escuta em `127.0.0.1` por padrão. Acesso remoto **só** pela Tailscale (`tailscale serve --bg http://127.0.0.1:8787`) — nunca porta pública nem `tailscale funnel`.
+- Painel escuta em `127.0.0.1` por padrão e **nunca** abre porta no roteador. Acesso remoto por um destes caminhos:
+  - **Cloudflare Tunnel + Cloudflare Access** (`online.bat`): o túnel sai do PC para a Cloudflare; o Access exige código no e-mail do dono **antes** de qualquer requisição chegar ao painel. Crie a aplicação do Access **antes** da rota do túnel e ligue "Protect with Access". Com isso, `ESTUDIO_COOKIE_SEGURO=1`.
+  - **Tailscale** (`tailscale serve --bg http://127.0.0.1:8787`): só aparelhos da sua conta.
+  - Nunca `tailscale funnel`, Quick Tunnel (`trycloudflare.com`) ou rota publicada sem Access: deixariam só a senha do painel entre a internet e o painel.
+- Cookie da sessão: `httpOnly`, `SameSite=Lax` (o Strict escondia a sessão na volta do login da Cloudflare) e `Secure` no modo online. A defesa contra CSRF é o cabeçalho `X-Estudio` exigido em todo POST, que outro site não consegue enviar.
 - O painel **não guarda senha de nenhuma plataforma** (YouTube, TikTok, Facebook, Instagram, Kwai, Snapchat): os botões só abrem a página oficial. Links salvos (perfil, post) precisam ser `https` num domínio da plataforma, conferido no servidor. O comando recusa `--host 0.0.0.0` sem `--permitir-rede`.
-- Login por senha com hash **scrypt** (`uv run estudio senha`), 10 tentativas por 15 min por IP (atrás do `tailscale serve` todo acesso vem de 127.0.0.1, então o limite é global — é o esperado para usuário único), cookie `httpOnly` + `SameSite=Strict` (+ `Secure` com `ESTUDIO_COOKIE_SEGURO=1`).
+- Login por senha com hash **scrypt** (`uv run estudio senha`), 10 tentativas por 15 min por IP (atrás do `tailscale serve` ou do túnel todo acesso vem de 127.0.0.1, então o limite é global — é o esperado para usuário único, e o Access barra estranhos antes).
 - Todo `POST` exige o cabeçalho `X-Estudio: 1`; cabeçalhos CSP, `nosniff`, `frame-ancestors 'none'` em todas as respostas.
 - `/api/config` nunca devolve chaves: só "configurada: sim/não".
 - Saída da LLM é entrada não confiável: schema + validação; nada dela vira comando, caminho ou HTML sem escape.

@@ -29,6 +29,7 @@ Depois, no dia a dia:
 | `iniciar.bat` | liga o painel e o worker em segundo plano e abre http://127.0.0.1:8787 |
 | `parar.bat` | desliga os dois |
 | `instalar.bat` | reinstala ou muda a configuração (`uv run estudio configurar --trocar-senha` troca só a senha) |
+| `online.bat` | põe o painel num endereço seu, protegido pelo login da Cloudflare (veja "Acesso online") |
 
 Registros ficam em `dados\logs`. Preferir fazer à mão:
 
@@ -83,7 +84,35 @@ e o Reels pela API vai até 90 s). Cada canal lista onde publica em `plataformas
 - O painel **nunca pede nem guarda senha** das plataformas. As regras ficam em `plataformas.yaml`,
   com a data em que foram conferidas; o painel avisa quando passarem de 90 dias.
 
-## Acesso pelo celular
+## Acesso online (qualquer navegador, sem instalar app)
+
+Um endereço seu (ex.: `https://painel.seudominio.com.br`) que abre em qualquer navegador, com
+**duas trancas**: primeiro o login da Cloudflare (código de 6 dígitos no seu e-mail; só o seu
+e-mail passa), depois a senha do painel. O PC liga para a Cloudflare; nenhuma porta é aberta no
+roteador e o painel continua escutando só em `127.0.0.1`. O PC precisa estar ligado.
+
+Você vai precisar de: conta grátis na Cloudflare e um domínio (ex.: um `.com.br` no registro.br).
+
+1. **Domínio na Cloudflare:** em cloudflare.com, *Add a domain* → plano **Free** → troque os
+   "servidores DNS" do domínio no registro.br pelos dois que a Cloudflare mostrar (pode levar
+   algumas horas).
+2. **Tranca 1 primeiro (Access):** no painel Zero Trust → *Integrations › Identity providers* →
+   adicione **One-time PIN**. Depois *Access controls › Applications › Create new application* →
+   **Self-hosted** → endereço `painel.seudominio.com.br` → regra **Allow** → *Emails* = o seu e-mail.
+   (A Cloudflare recomenda criar a tranca antes do caminho, para o painel nunca ficar aberto.)
+3. **Túnel:** *Networking › Tunnels › Create a tunnel* → **Cloudflared** → nome `estudio` →
+   Windows. A tela mostra um comando com um token longo: **não rode**; dê dois cliques em
+   **`online.bat`** e cole só o token quando ele pedir. Ele instala o túnel como serviço (liga
+   sozinho com o PC) e põe o painel em modo online (`ESTUDIO_COOKIE_SEGURO=1`).
+4. **Caminho:** de volta ao túnel → aba *Routes* → *Add route* → **Published application** →
+   subdomínio `painel`, seu domínio, *Service URL* `http://127.0.0.1:8787`. Ligue **Protect with
+   Access** se aparecer.
+5. Rode `parar.bat` e `iniciar.bat`. Abra o endereço no celular, no PC, onde quiser.
+
+No modo online, use o endereço online também no PC. Se o login da Cloudflare expirar com o painel
+aberto, o painel avisa e é só recarregar a página.
+
+## Acesso pelo celular (Tailscale, alternativa sem domínio)
 
 O `instalar.bat` configura isso se você responder "s". À mão: instale a Tailscale no PC e no
 celular, entre na mesma conta e publique o painel só na sua rede:

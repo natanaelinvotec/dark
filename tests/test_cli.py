@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import shutil
 
+import pytest
+
 from estudio.cli import configurar, gravar_no_env, main
 from estudio.config import RAIZ, ler_dotenv
 from painel.seguranca import verificar_senha
@@ -28,6 +30,15 @@ def test_configurar_cria_env_com_segredo_senha_e_drive(tmp_path):
     assert verificar_senha("senha-bem-longa-1", valores["ESTUDIO_SENHA_HASH"])
     assert valores["PEXELS_CHAVE"] == ""
     assert configurar(tmp_path) == []  # rodar de novo não troca o segredo
+    assert configurar(tmp_path, online=True) == ["ESTUDIO_COOKIE_SEGURO"]
+    assert ler_dotenv(tmp_path / ".env")["ESTUDIO_COOKIE_SEGURO"] == "1"
+    assert configurar(tmp_path, online=True) == []
+    assert configurar(tmp_path, online=False) == ["ESTUDIO_COOKIE_SEGURO"]
+    assert configurar(tmp_path, endereco="https://painel.exemplo.com.br/") == ["ESTUDIO_ENDERECO"]
+    assert ler_dotenv(tmp_path / ".env")["ESTUDIO_ENDERECO"] == "https://painel.exemplo.com.br"
+    for ruim in ("http://painel.exemplo.com.br", "https://painel.exemplo.com.br/x?y=1"):
+        with pytest.raises(ValueError):
+            configurar(tmp_path, endereco=ruim)
 
 
 def test_exemplo_so_em_banco_vazio_e_worker_recusa_banco_de_exemplo(tmp_path, monkeypatch):

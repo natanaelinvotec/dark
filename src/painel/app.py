@@ -114,7 +114,10 @@ def criar_app(
         secret_key=cfg.segredo_sessao or "teste-" + "x" * 40,
         session_cookie="estudio_sessao",
         max_age=12 * 3600,
-        same_site="strict",
+        # Lax (e não Strict): quem chega pelo login da Cloudflare Access ou por um link do
+        # WhatsApp vem de outro site, e o Strict escondia a sessão nessa primeira visita.
+        # A proteção contra CSRF continua no cabeçalho X-Estudio exigido em todo POST.
+        same_site="lax",
         https_only=cfg.cookie_seguro,
     )
 
