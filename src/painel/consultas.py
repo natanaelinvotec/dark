@@ -10,11 +10,12 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
-from estudio import __version__, db
+from estudio import __version__, db, publicacao
 from estudio.acoes import proximo_horario
-from estudio.config import Canal, Config
+from estudio.config import Canal, Config, Registro
 from estudio.gatilho import condicoes, medir
 from estudio.tempo import agora, de_iso, iso, mes_de
+from painel.seguranca import dentro_de
 
 NIVEL_ORDEM = {"cr": 0, "at": 1, "in": 2}
 
@@ -173,6 +174,27 @@ def precisa_de_voce(
         itens.append({"nivel": "at", "titulo": f"{n_fila} vídeo(s) esperando aprovação",
                       "detalhe": f"O mais antigo está na fila há {horas:.0f} h",
                       "rota": "aprovacao"})
+
+    devidos = 0
+    for v in con.execute(
+        "SELECT id, canal_id FROM videos WHERE status IN ('aprovado', 'publicado') "
+        "AND horario <= ? AND horario >= ?",  # janela de 30 dias: o cabeçalho consulta a cada 60 s
+        (iso(momento), iso(momento - timedelta(days=JANELA_PUBLICAR_DIAS))),
+    ):
+        canal = canais.get(v["canal_id"])
+        resolvidas = {
+            r["plataforma"]
+            for r in con.execute(
+                "SELECT plataforma FROM publicacoes WHERE video_id = ? AND situacao != 'pendente'",
+                (v["id"],),
+            )
+        }
+        if canal and any(p not in resolvidas for p in canal.plataformas):
+            devidos += 1
+    if devidos:
+        itens.append({"nivel": "at", "titulo": f"{devidos} vídeo(s) na hora de publicar",
+                      "detalhe": "Abra Plataformas e publique em cada rede", "rota": "plataformas",
+                      "n": devidos})
 
     restantes = _num_config(con, "creditos_flow_restantes")
     total = _num_config(con, "creditos_flow_total") or 1000
@@ -527,4 +549,113 @@ def saude(con: sqlite3.Connection, cfg: Config) -> dict[str, Any]:
             r["status"]: r["n"]
             for r in con.execute("SELECT status, COUNT(*) AS n FROM videos GROUP BY status")
         },
+    }
+
+
+# --------------------------------------------------------------------------- plataformas
+
+ABAS_PUBLICAR = {"pendentes": "Para publicar", "feitos": "Publicados (14 dias)"}
+JANELA_PUBLICAR_DIAS = 30  # vídeo agendado há mais de 30 dias e não publicado sai da lista
+
+
+def _roteiro_dict(bruto: str | None) -> dict[str, Any]:
+    try:
+        dados = json.loads(bruto or "{}")
+    except ValueError:
+        return {}
+    return dados if isinstance(dados, dict) else {}
+
+
+def publicar(
+    con: sqlite3.Connection,
+    cfg: Config,
+    canais: dict[str, Canal],
+    registro: Registro,
+    aba: str,
+) -> dict[str, Any]:
+    """Vídeos aprovados × plataformas do canal: o que falta subir e o texto pronto de cada uma."""
+    if aba not in ABAS_PUBLICAR:
+        aba = "pendentes"
+    momento = agora()
+    limite_feitos = iso(momento - timedelta(days=14))
+    grupos: dict[str, list[dict[str, Any]]] = {"pendentes": [], "feitos": []}
+    for v in con.execute(
+        "SELECT * FROM videos WHERE status IN ('aprovado', 'publicado') "
+        "AND (horario IS NULL OR horario >= ?) ORDER BY horario",
+        (iso(momento - timedelta(days=JANELA_PUBLICAR_DIAS)),),
+    ):
+        canal = canais.get(v["canal_id"])
+        if canal is None:
+            continue
+        feitas = publicacao.publicacoes_do_video(con, v["id"])
+        faltam = publicacao.pendentes(registro, canal, feitas)
+        # "publicado há 14 dias" conta a partir da última plataforma resolvida, não do vídeo
+        ultima = max((f["atualizado_em"] for f in feitas.values()),
+                     default=v["atualizado_em"] or "")
+        if not faltam and ultima < limite_feitos:
+            continue
+        titulo = v["titulo"] or v["tema"]
+        roteiro = _roteiro_dict(v["roteiro_json"])
+        linhas = []
+        for p in registro.do_canal(canal):
+            feita = feitas.get(p.id, {})
+            status, detalhe = publicacao.elegibilidade(p, v["duracao_s"])
+            conta = publicacao.obter_conta(con, canal.slug, p.id)
+            linhas.append({
+                "id": p.id,
+                "nome": p.nome,
+                "cor": p.cor,
+                "publicacao": p.publicacao,
+                "situacao": feita.get("situacao", "pendente"),
+                "url": feita.get("url", ""),
+                "publicado_em": feita.get("publicado_em"),
+                "elegivel": {"status": status, "detalhe": detalhe},
+                "legenda": publicacao.legenda(p, titulo, roteiro),
+                "subir": p.urls.subir,
+                "ao_publicar": p.ao_publicar,
+                "conta": {"usuario": conta["usuario"], "situacao": conta["situacao"]},
+            })
+        grupos["pendentes" if faltam else "feitos"].append({
+            "id": v["id"],
+            "canal": _canal_json(canais, v["canal_id"]),
+            "titulo": titulo,
+            "horario": v["horario"],
+            "duracao": v["duracao_s"],
+            "status": v["status"],
+            "tem_arquivo": dentro_de(cfg.dados, v["arquivo"] or "") is not None,
+            "faltam": len(faltam),
+            "plataformas": linhas,
+        })
+    grupos["feitos"].reverse()  # mais recentes primeiro
+    return {
+        "aba": aba,
+        "abas": [{"id": k, "rotulo": r, "n": len(grupos[k])} for k, r in ABAS_PUBLICAR.items()],
+        "itens": grupos[aba][:40],
+    }
+
+
+def plataformas(
+    con: sqlite3.Connection, canais: dict[str, Canal], registro: Registro
+) -> dict[str, Any]:
+    """Cada plataforma com o programa, as metas e a conta de cada canal que publica nela."""
+    dias = (agora().date() - registro.verificado_em).days
+    lista = []
+    for p in registro.plataformas.values():
+        contas = []
+        for c in canais.values():
+            if p.id not in c.plataformas:
+                continue
+            conta = publicacao.obter_conta(con, c.slug, p.id)
+            contas.append({
+                "canal": _canal_json(canais, c.slug),
+                **conta,
+                "progresso": publicacao.progresso(p, conta["numeros"]),
+            })
+        lista.append({**p.model_dump(), "contas": contas})
+    return {
+        "verificado_em": registro.verificado_em.isoformat(),
+        "dias": dias,
+        "revisar": dias > 90,
+        "situacoes": list(publicacao.SITUACOES_CONTA),
+        "plataformas": lista,
     }

@@ -14,6 +14,7 @@ RUN uv sync --no-dev --all-extras --no-install-project
 
 COPY src ./src
 COPY channels ./channels
+COPY plataformas.yaml ./
 COPY assets ./assets
 RUN uv sync --no-dev --all-extras
 

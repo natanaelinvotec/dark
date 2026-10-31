@@ -208,6 +208,23 @@ a.mg-atalho:hover { box-shadow: 0 0 0 2px var(--teal), var(--sombra); color: var
 .mg-desabilitado { opacity: .7; }
 .mg-linha-prod { border-top: 1px solid var(--linha); margin-top: 18px; padding-top: 16px; }
 
+/* plataformas */
+.mg-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mg-pubs { list-style: none; margin: 14px 0 0; padding: 0; }
+.mg-pub { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-top: 1px solid var(--linha); }
+.mg-pub:first-child { border-top: 0; }
+.mg-pub .mg-form-linha .mg-campo { flex: 1 1 220px; }
+.mg-detalhes summary { display: flex; align-items: center; min-height: 36px; font-size: 13px; font-weight: 700; color: var(--navy); cursor: pointer; }
+.mg-detalhes summary:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; border-radius: 8px; }
+.mg-texto { min-height: 120px; white-space: pre-wrap; }
+textarea.mg-texto-curto { min-height: 56px; }
+.mg-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.mg-largura-2 { grid-column: 1 / -1; }
+.mg-check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.mg-check input { width: 20px; height: 20px; accent-color: var(--teal); }
+.mg-link { color: var(--navy); font-weight: 700; overflow-wrap: anywhere; }
+.mg-dados > div { min-width: 0; }
+
 /* esqueleto e estados */
 .mg-esqueleto { height: 120px; border-radius: 22px; background: linear-gradient(90deg, #E1EBEA 0%, #F2F7F6 50%, #E1EBEA 100%); background-size: 200% 100%; animation: mgBrilho 1.2s linear infinite; }
 @keyframes mgBrilho { to { background-position: -200% 0; } }
@@ -242,5 +259,6 @@ a.mg-atalho:hover { box-shadow: 0 0 0 2px var(--teal), var(--sombra); color: var
   .mg-prev { width: 100%; max-width: 260px; margin: 0 auto; }
   .mg-wf { grid-template-columns: minmax(0, 1fr) 96px; }
   .mg-wf-trilho { grid-column: 1 / -1; }
+  .mg-campos { grid-template-columns: minmax(0, 1fr); }
   .mg-pular:focus { left: 12px; }
 }

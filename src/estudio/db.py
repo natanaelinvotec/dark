@@ -144,6 +144,26 @@ CREATE TABLE IF NOT EXISTS config (
     chave TEXT PRIMARY KEY,
     valor TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS contas (
+    canal_id TEXT NOT NULL REFERENCES canais(id),
+    plataforma TEXT NOT NULL,
+    usuario TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    situacao TEXT NOT NULL DEFAULT 'planejada',
+    seguranca INTEGER NOT NULL DEFAULT 0,
+    numeros_json TEXT NOT NULL DEFAULT '{}',
+    atualizado_em TEXT NOT NULL,
+    PRIMARY KEY (canal_id, plataforma)
+);
+CREATE TABLE IF NOT EXISTS publicacoes (
+    video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    plataforma TEXT NOT NULL,
+    situacao TEXT NOT NULL DEFAULT 'pendente',
+    url TEXT NOT NULL DEFAULT '',
+    publicado_em TEXT,
+    atualizado_em TEXT NOT NULL,
+    PRIMARY KEY (video_id, plataforma)
+);
 """
 
 

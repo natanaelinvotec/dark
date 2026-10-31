@@ -11,6 +11,16 @@
 - Depois das correções, verificado aqui: compilação de todos os `.py`, `node --check` no front, 7 testes de legendas/similaridade
   e o comando de análise do FFmpeg. **Falta rodar no seu PC:** `uv run pytest -q` e `uv run ruff check .` (o CI do GitHub também roda).
 
+## Fase 3b — Plataformas e instalação (31/10/2026)
+- [~] **P1 Cadastro de plataformas** (`plataformas.yaml`, `config.py`): 6 redes com programa, requisitos, Brasil, links oficiais e domínios; canal lista onde publica.
+- [~] **P2 Publicação assistida** (`publicacao.py`, tela Plataformas): baixar MP4, copiar legenda por rede, abrir envio oficial, colar link, marcar publicado/pulado.
+- [~] **P3 Contas por canal**: @, situação, 2FA, números e progresso até a meta de cada programa.
+- [~] **P4 Duração 61–80 s** + teste "Duração p/ monetizar".
+- [~] **P5 Instalação** (`instalar.bat`, `iniciar.bat`, `parar.bat`, `estudio configurar`), Tailscale opcional.
+- [ ] **P6 Contas reais** (manual): criar perfis no TikTok (pessoal), Facebook (página/modo profissional), Instagram (profissional), Kwai e Snapchat com passkey/2FA; preencher a aba Contas.
+- [ ] **P7 Metricool** (opcional): agendar YouTube/TikTok/Facebook/Instagram pelo conector, depois de testar 1 vídeo manual em cada rede.
+- [ ] **P8 Revisar `plataformas.yaml`** a cada 90 dias (o painel avisa).
+
 ## Fase 1 — Fundação
 - [ ] **T1 Contas** (manual): 2 canais + conta de clipping, passkey/chave física, canais criados em dias diferentes.
 - [~] **T2 Repositório e ambiente**: `pyproject.toml`, `Dockerfile`, `docker-compose.yml`, CI, `.env.example`, `SECURITY.md`.

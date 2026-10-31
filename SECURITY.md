@@ -6,7 +6,8 @@
 3. **O banco** (`dados/estudio.db`): fila, custos, receitas, auditoria.
 
 ## Regras do projeto
-- Painel escuta em `127.0.0.1` por padrão. Acesso remoto **só** pela Tailscale (`tailscale serve https / http://127.0.0.1:8787`) — nunca porta pública. O comando recusa `--host 0.0.0.0` sem `--permitir-rede`.
+- Painel escuta em `127.0.0.1` por padrão. Acesso remoto **só** pela Tailscale (`tailscale serve --bg http://127.0.0.1:8787`) — nunca porta pública nem `tailscale funnel`.
+- O painel **não guarda senha de nenhuma plataforma** (YouTube, TikTok, Facebook, Instagram, Kwai, Snapchat): os botões só abrem a página oficial. Links salvos (perfil, post) precisam ser `https` num domínio da plataforma, conferido no servidor. O comando recusa `--host 0.0.0.0` sem `--permitir-rede`.
 - Login por senha com hash **scrypt** (`uv run estudio senha`), 10 tentativas por 15 min por IP (atrás do `tailscale serve` todo acesso vem de 127.0.0.1, então o limite é global — é o esperado para usuário único), cookie `httpOnly` + `SameSite=Strict` (+ `Secure` com `ESTUDIO_COOKIE_SEGURO=1`).
 - Todo `POST` exige o cabeçalho `X-Estudio: 1`; cabeçalhos CSP, `nosniff`, `frame-ancestors 'none'` em todas as respostas.
 - `/api/config` nunca devolve chaves: só "configurada: sim/não".

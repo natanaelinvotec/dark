@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import timedelta
 
 from estudio import db
 from estudio.db import Teste
-from estudio.tempo import agora, mes_de
+from estudio.tempo import agora, iso, mes_de
 
 
 def _video(
@@ -61,18 +62,61 @@ def carregar_exemplo(con: sqlite3.Connection) -> None:
     if db.obter_config(con, "dados_exemplo") == "1":
         return
     serie = "Temporada Davi"
-    _video(con, "biblico-manhwa", "O gigante de Gate desafia Israel", serie=serie,
-           referencia="1 Samuel 17:1-10", status="publicado", duracao=55.0,
-           testes=_padrao(0.12))
+    momento = agora()
+    meio_dia = momento.replace(hour=12, minute=0, second=0, microsecond=0)
+    publicado = _video(con, "biblico-manhwa", "O gigante de Gate desafia Israel", serie=serie,
+                       referencia="1 Samuel 17:1-10", status="publicado", duracao=66.0,
+                       testes=_padrao(0.12))
+    db.atualizar_video(
+        con, publicado, horario=iso(meio_dia - timedelta(days=1)),
+        roteiro_json=json.dumps({
+            "descricao": "Golias desafia o exército de Israel por 40 dias. Episódio 1.",
+            "hashtags": ["#biblia", "#davi", "#manhwa", "#historiasbiblicas"],
+            "fontes": ["1 Samuel 17:1-10"],
+        }),
+    )
+    aprovado = _video(con, "curiosidades", "Por que o céu fica laranja no fim da tarde",
+                      status="aprovado", duracao=68.0, testes=_padrao(0.11))
+    db.atualizar_video(
+        con, aprovado, horario=iso(meio_dia + timedelta(hours=6, minutes=30)),
+        roteiro_json=json.dumps({
+            "descricao": "A luz do pôr do sol atravessa mais ar e o azul se espalha pelo caminho.",
+            "hashtags": ["#curiosidades", "#ciencia", "#ceu", "#pordosol"],
+            "fontes": ["NASA Space Place: Why is the sky blue?"],
+        }),
+    )
+    agora_iso = iso(momento)
+    con.executemany(
+        "INSERT INTO publicacoes (video_id, plataforma, situacao, url, publicado_em, "
+        "atualizado_em) VALUES (?, ?, ?, '', ?, ?)",
+        [(publicado, "youtube", "publicado", agora_iso, agora_iso),
+         (publicado, "tiktok", "publicado", agora_iso, agora_iso),
+         (publicado, "kwai", "pulado", None, agora_iso)],
+    )
+    contas = [
+        ("biblico-manhwa", "youtube", "@biblico.manhwa", "crescendo",
+         {"inscritos": 940, "views_shorts_90d": 1240000, "seguidores": 940}),
+        ("biblico-manhwa", "tiktok", "@biblico.manhwa", "crescendo",
+         {"seguidores": 3860, "views_30d": 61000}),
+        ("curiosidades", "youtube", "@curiosidades", "criada",
+         {"inscritos": 680, "views_shorts_90d": 820000, "seguidores": 680}),
+        ("curiosidades", "tiktok", "@curiosidades", "criada",
+         {"seguidores": 2140, "views_30d": 38000}),
+    ]
+    con.executemany(
+        "INSERT OR REPLACE INTO contas (canal_id, plataforma, usuario, url, situacao, seguranca, "
+        "numeros_json, atualizado_em) VALUES (?, ?, ?, '', ?, 1, ?, ?)",
+        [(c, p, u, s, json.dumps(n), agora_iso) for c, p, u, s, n in contas],
+    )
     _video(con, "biblico-manhwa", "O gigante que desafiou um exército por 40 dias", serie=serie,
-           referencia="1 Samuel 17:11-16", status="fila", duracao=58.0, testes=_padrao(0.22))
+           referencia="1 Samuel 17:11-16", status="fila", duracao=71.0, testes=_padrao(0.22))
     _video(con, "biblico-manhwa", "Davi recebe a missão que ninguém queria", serie=serie,
-           referencia="1 Samuel 17:17-30", status="fila", duracao=54.0,
+           referencia="1 Samuel 17:17-30", status="fila", duracao=64.0,
            aviso="Altura de Golias: o texto massorético diz 6 côvados e 1 palmo; outros "
                  "manuscritos dizem 4 → confira 1 Samuel 17:4",
            testes=_padrao(0.18, checagem=Teste("Checagem: 1 aviso(s)", "at")))
     _video(con, "biblico-manhwa", "O pastor que já tinha enfrentado um leão e um urso",
-           serie=serie, referencia="1 Samuel 17:31-37", status="fila", duracao=57.0,
+           serie=serie, referencia="1 Samuel 17:31-37", status="fila", duracao=69.0,
            testes=_padrao(0.25))
     _video(con, "biblico-manhwa", "Davi recusa a armadura do rei", serie=serie,
            referencia="1 Samuel 17:38-39", status="voce",
@@ -80,12 +124,12 @@ def carregar_exemplo(con: sqlite3.Connection) -> None:
     _video(con, "biblico-manhwa", "Cinco pedras lisas do riacho", serie=serie,
            referencia="1 Samuel 17:40-51", status="produzindo", etapas={"roteiro": "rodando"})
     _video(con, "curiosidades", "O planeta onde chove vidro de lado", status="fila",
-           duracao=52.0, testes=_padrao(0.14))
+           duracao=62.0, testes=_padrao(0.14))
     legenda_atrasada = Teste("Legenda", "cr", "atrasada 0,8 s a partir de 0:31")
     _video(con, "curiosidades", "Por que o pôr do sol em Marte é azul", status="reprovado",
-           duracao=49.0, testes=_padrao(0.19, legenda=legenda_atrasada))
+           duracao=63.0, testes=_padrao(0.19, legenda=legenda_atrasada))
     _video(con, "curiosidades", "O som mais alto já registrado", status="reprovado",
-           duracao=55.0, testes=_padrao(0.72))
+           duracao=67.0, testes=_padrao(0.72))
     _video(con, "curiosidades", "Os relâmpagos que quase não param no Catatumbo",
            status="produzindo",
            etapas={e: "feito" for e in ("roteiro", "checagem", "quadros", "voz", "montagem")}

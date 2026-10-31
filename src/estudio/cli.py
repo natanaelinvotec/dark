@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import getpass
 import logging
+import re
+import secrets
+import shutil
 import sys
 from datetime import date
 from pathlib import Path
 
 from estudio import db
-from estudio.config import carregar_canais, carregar_config
+from estudio.config import RAIZ, carregar_canais, carregar_config, ler_dotenv
 from estudio.tempo import agora
 
 PASTAS_DO_CANAL = (
@@ -58,19 +61,109 @@ def cmd_exemplo(_: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_senha(_: argparse.Namespace) -> int:
-    from painel.seguranca import gerar_hash
-
+def _pedir_senha() -> str | None:
     senha = getpass.getpass("Nova senha do painel (mín. 12 caracteres): ")
     if len(senha) < 12:
         print("Senha curta demais.", file=sys.stderr)
-        return 1
+        return None
     if getpass.getpass("Repita: ") != senha:
         print("As senhas não conferem.", file=sys.stderr)
+        return None
+    return senha
+
+
+def cmd_senha(_: argparse.Namespace) -> int:
+    from painel.seguranca import gerar_hash
+
+    senha = _pedir_senha()
+    if senha is None:
         return 1
     # aspas simples: o hash tem '$', que o docker compose e alguns shells tentariam expandir
-    print("Cole no .env (com as aspas):")
+    print("Cole no .env (com as aspas), ou rode 'estudio configurar --trocar-senha':")
     print(f"ESTUDIO_SENHA_HASH='{gerar_hash(senha)}'")
+    return 0
+
+
+_LINHA_ENV = re.compile(r"^\s*([A-Z][A-Z0-9_]*)\s*=")
+CHAVES_OPCIONAIS = (
+    ("GEMINI_API_KEY", "Chave da Gemini API (aistudio.google.com)"),
+    ("AZURE_TTS_CHAVE", "Chave da voz Azure"),
+    ("PEXELS_CHAVE", "Chave do Pexels"),
+    ("PIXABAY_CHAVE", "Chave do Pixabay"),
+)
+
+
+def gravar_no_env(arquivo: Path, valores: dict[str, str]) -> None:
+    """Troca (ou acrescenta) CHAVE=valor no .env, mantendo comentários e a ordem."""
+    linhas = arquivo.read_text(encoding="utf-8").splitlines() if arquivo.exists() else []
+    faltando = dict(valores)
+    for i, linha in enumerate(linhas):
+        achado = _LINHA_ENV.match(linha)
+        if achado and achado.group(1) in faltando:
+            chave = achado.group(1)
+            linhas[i] = f"{chave}={faltando.pop(chave)}"
+    linhas += [f"{k}={v}" for k, v in faltando.items()]
+    arquivo.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+
+
+def configurar(
+    raiz: Path,
+    *,
+    dados: str | None = None,
+    senha: str | None = None,
+    chaves: dict[str, str] | None = None,
+) -> list[str]:
+    """Cria o .env (se faltar) e grava só o que foi pedido. Devolve o que mudou (sem valores)."""
+    from painel.seguranca import gerar_hash
+
+    env = raiz / ".env"
+    if not env.exists():
+        shutil.copyfile(raiz / ".env.example", env)
+    atuais = ler_dotenv(env)
+    novos: dict[str, str] = {}
+    if len(atuais.get("ESTUDIO_SEGREDO_SESSAO", "")) < 32:
+        novos["ESTUDIO_SEGREDO_SESSAO"] = secrets.token_urlsafe(48)
+    if dados:
+        # barras normais: o .env é lido também pelo docker compose, que interpreta '\'
+        novos["ESTUDIO_DADOS"] = dados.strip().strip('"').replace("\\", "/")
+    if senha:
+        novos["ESTUDIO_SENHA_HASH"] = f"'{gerar_hash(senha)}'"
+    for chave, valor in (chaves or {}).items():
+        if valor.strip():
+            novos[chave] = valor.strip()
+    if novos:
+        gravar_no_env(env, novos)
+    return sorted(novos)
+
+
+def cmd_configurar(args: argparse.Namespace) -> int:
+    env = RAIZ / ".env"
+    atuais = ler_dotenv(env) if env.exists() else ler_dotenv(RAIZ / ".env.example")
+    interativo = sys.stdin.isatty()
+
+    dados = args.dados
+    if dados is None and interativo:
+        padrao = atuais.get("ESTUDIO_DADOS", "")
+        resposta = input(f"Pasta do Google Drive para os vídeos [{padrao}]: ").strip()
+        dados = resposta or None
+
+    senha = None
+    if args.trocar_senha or not atuais.get("ESTUDIO_SENHA_HASH"):
+        if not interativo:
+            print("Rode no terminal para escolher a senha do painel.", file=sys.stderr)
+            return 1
+        senha = _pedir_senha()
+        if senha is None:
+            return 1
+
+    chaves: dict[str, str] = {}
+    if interativo:
+        for chave, rotulo in CHAVES_OPCIONAIS:
+            if not atuais.get(chave):
+                chaves[chave] = getpass.getpass(f"{rotulo} (Enter para pular; não aparece): ")
+
+    mudou = configurar(RAIZ, dados=dados, senha=senha, chaves=chaves)
+    print("Nada mudou no .env." if not mudou else "Atualizado no .env: " + ", ".join(mudou))
     return 0
 
 
@@ -145,6 +238,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("init", help="cria banco e pastas").set_defaults(func=cmd_init)
     sub.add_parser("seed-exemplo", help="carrega dados de exemplo").set_defaults(func=cmd_exemplo)
     sub.add_parser("senha", help="gera o hash da senha do painel").set_defaults(func=cmd_senha)
+
+    c = sub.add_parser("configurar", help="cria/ajusta o .env (segredo, senha, Drive, chaves)")
+    c.add_argument("--dados", help="pasta do Google Drive, ex.: \"G:/Meu Drive/Estudio\"")
+    c.add_argument("--trocar-senha", action="store_true")
+    c.set_defaults(func=cmd_configurar)
 
     p = sub.add_parser("painel", help="sobe o painel web")
     p.add_argument("--host", default="127.0.0.1")

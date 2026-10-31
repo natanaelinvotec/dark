@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Literal
+from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 RAIZ = Path(__file__).resolve().parents[2]
 FUSO = "America/Sao_Paulo"
 TIPOS_JANELA_PADRAO = ["MISSAO", "MISSAO_OCULTA", "ITEM", "STATUS"]
+PLATAFORMAS_PADRAO = ["youtube", "tiktok"]
 
 
 # --------------------------------------------------------------------------- ambiente
@@ -55,6 +58,7 @@ class Config:
     pixabay_chave: str = field(default="", repr=False)
     teto_mes_brl: float = 150.0
     cambio_usd_brl: float = 5.2
+    plataformas_arquivo: Path = RAIZ / "plataformas.yaml"
 
     def chaves_configuradas(self) -> dict[str, bool]:
         """Só diz se cada chave existe. Nunca devolve o valor."""
@@ -104,6 +108,9 @@ def carregar_config(env: Mapping[str, str] | None = None, raiz: Path = RAIZ) -> 
         pixabay_chave=env.get("PIXABAY_CHAVE", ""),
         teto_mes_brl=_numero(env, "TETO_MES_BRL", 150.0),
         cambio_usd_brl=_numero(env, "CAMBIO_USD_BRL", 5.2),
+        plataformas_arquivo=_caminho(
+            env.get("ESTUDIO_PLATAFORMAS", "plataformas.yaml"), raiz
+        ),
     )
 
 
@@ -115,10 +122,10 @@ class _Base(BaseModel):
 
 
 class Formato(_Base):
-    short_segundos: tuple[int, int] = (45, 60)
-    tiktok_segundos: tuple[int, int] = (61, 85)
-    palavras_min: int = 110
-    palavras_max: int = 165
+    short_segundos: tuple[int, int] = (61, 80)
+    tiktok_segundos: tuple[int, int] = (61, 80)
+    palavras_min: int = 150
+    palavras_max: int = 195
     cenas_min: int = 6
     cenas_max: int = 14
     janelas_min: int = 0
@@ -190,12 +197,20 @@ class Canal(_Base):
     janela_de_missao: EstiloJanela = EstiloJanela()
     sistema: Sistema | None = None
     busca_visual_padrao: str = "abstract background"
+    plataformas: list[str] = PLATAFORMAS_PADRAO
 
     @field_validator("slug")
     @classmethod
     def _slug(cls, v: str) -> str:
         if not _SLUG.match(v):
             raise ValueError("slug só com letras minúsculas, números e hífen")
+        return v
+
+    @field_validator("plataformas")
+    @classmethod
+    def _plataformas(cls, v: list[str]) -> list[str]:
+        if len(set(v)) != len(v) or not all(_SLUG.match(p) for p in v):
+            raise ValueError("plataformas: ids únicos em minúsculas (ex.: youtube, tiktok)")
         return v
 
     @field_validator("cor")
@@ -238,3 +253,138 @@ def carregar_canais(pasta: Path) -> dict[str, Canal]:
             raise ValueError(f"slug repetido: {canal.slug} ({arquivo.name})")
         canais[canal.slug] = canal
     return canais
+
+
+# --------------------------------------------------------------------------- plataformas
+
+
+_CHAVE = re.compile(r"^[a-z][a-z0-9_]{0,30}$")
+_DOMINIO = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
+
+
+def host_aceito(url: str, dominios: Iterable[str]) -> bool:
+    """https e host igual a um domínio da lista ou subdomínio dele (nada de 'youtube.com.x.io')."""
+    url = url.strip()
+    # navegadores leem '\' como '/': 'https://golpe.com\.youtube.com' abriria golpe.com
+    if "\\" in url or any(ord(c) < 33 for c in url):
+        return False
+    partes = urlsplit(url)
+    host = (partes.hostname or "").lower()
+    if partes.scheme != "https" or partes.username or partes.password:
+        return False
+    if not _DOMINIO.match(host):
+        return False
+    return any(host == d or host.endswith("." + d) for d in dominios)
+
+
+class Meta(_Base):
+    chave: str
+    rotulo: str = Field(min_length=1)
+    alvo: int = Field(gt=0)
+
+    @field_validator("chave")
+    @classmethod
+    def _chave(cls, v: str) -> str:
+        if not _CHAVE.match(v):
+            raise ValueError("chave da meta em minúsculas, ex.: views_30d")
+        return v
+
+
+class Urls(_Base):
+    entrar: str = ""
+    subir: str = ""
+    painel: str = ""
+    programa: str = ""
+
+
+class Plataforma(_Base):
+    id: str
+    nome: str
+    cor: str = "#56676A"
+    programa: str = ""
+    brasil: str = ""
+    requisitos: str = ""
+    conta: str = ""
+    duracao_min_s: int = Field(default=0, ge=0)
+    duracao_max_s: int = Field(default=0, ge=0)  # 0 = sem limite
+    metas: list[Meta] = []
+    dominios: list[str]
+    urls: Urls = Urls()
+    publicacao: Literal["web", "app"] = "web"
+    api: str = ""
+    metricool: bool = False
+    legenda: Literal["titulo_descricao", "completa", "curta"] = "completa"
+    ao_publicar: list[str] = []
+    riscos: list[str] = []
+    fontes: list[str] = []
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v: str) -> str:
+        if not _SLUG.match(v):
+            raise ValueError("id da plataforma em minúsculas, ex.: tiktok")
+        return v
+
+    @field_validator("cor")
+    @classmethod
+    def _cor(cls, v: str) -> str:
+        if not _COR.match(v):
+            raise ValueError("cor no formato #RRGGBB")
+        return v
+
+    @field_validator("dominios")
+    @classmethod
+    def _dominios(cls, v: list[str]) -> list[str]:
+        if not v or not all(_DOMINIO.match(d) for d in v):
+            raise ValueError("dominios: lista de hosts, ex.: [tiktok.com]")
+        return v
+
+    @model_validator(mode="after")
+    def _links_seguros(self) -> Plataforma:
+        for nome, url in self.urls.model_dump().items():
+            if url and not host_aceito(url, self.dominios):
+                raise ValueError(f"{self.id}: urls.{nome} precisa ser https num dos dominios")
+        if any(not f.startswith("https://") for f in self.fontes):
+            raise ValueError(f"{self.id}: fontes precisam ser links https")
+        if self.metas and len({m.chave for m in self.metas}) != len(self.metas):
+            raise ValueError(f"{self.id}: chaves de meta repetidas")
+        return self
+
+    def aceita_link(self, url: str) -> bool:
+        return host_aceito(url, self.dominios)
+
+
+class _ArquivoPlataformas(_Base):
+    verificado_em: date
+    plataformas: list[Plataforma]
+
+
+@dataclass(frozen=True)
+class Registro:
+    verificado_em: date
+    plataformas: dict[str, Plataforma]
+
+    def do_canal(self, canal: Canal) -> list[Plataforma]:
+        return [self.plataformas[p] for p in canal.plataformas if p in self.plataformas]
+
+
+def carregar_plataformas(arquivo: Path) -> Registro:
+    bruto = yaml.safe_load(arquivo.read_text(encoding="utf-8")) or {}
+    dados = _ArquivoPlataformas.model_validate(bruto)
+    plataformas: dict[str, Plataforma] = {}
+    for p in dados.plataformas:
+        if p.id in plataformas:
+            raise ValueError(f"plataforma repetida: {p.id}")
+        plataformas[p.id] = p
+    return Registro(dados.verificado_em, plataformas)
+
+
+def conferir_plataformas(canais: Mapping[str, Canal], registro: Registro) -> None:
+    """Falha cedo se um canal cita plataforma que não está em plataformas.yaml."""
+    for canal in canais.values():
+        faltando = [p for p in canal.plataformas if p not in registro.plataformas]
+        if faltando:
+            raise ValueError(
+                f"canal {canal.slug}: plataforma desconhecida {', '.join(faltando)} "
+                f"(opções: {', '.join(registro.plataformas)})"
+            )

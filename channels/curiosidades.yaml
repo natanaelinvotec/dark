@@ -5,17 +5,20 @@ nome: Curiosidades
 cor: "#0E9A82"
 enabled: true
 idioma: pt-BR
-descricao: Ciência, espaço e história em menos de 1 minuto
+descricao: Ciência, espaço e história em pouco mais de 1 minuto
 pasta: Canal-Curiosidades
 horarios: ["12:00", "18:30"]
+# onde cada vídeo deste canal é publicado (ids de plataformas.yaml)
+plataformas: [youtube, tiktok, facebook, instagram, kwai, snapchat]
 
 formato:
-  short_segundos: [40, 60]
-  tiktok_segundos: [61, 85]
-  palavras_min: 120
-  palavras_max: 165
-  cenas_min: 8
-  cenas_max: 14
+  # 61–80 s: o TikTok só paga vídeos com 1 min ou mais; Reels via API vai até 90 s
+  short_segundos: [61, 80]
+  tiktok_segundos: [61, 80]
+  palavras_min: 150
+  palavras_max: 195
+  cenas_min: 10
+  cenas_max: 16
   janelas_min: 0
   janelas_max: 0
 

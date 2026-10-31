@@ -7,8 +7,9 @@ from estudio.roteiro import RespostaLLM
 
 
 def fazer_roteiro(
-    cenas: int = 10, palavras_por_cena: int = 13, janelas: int = 1, gancho: str = "Um gigante"
+    cenas: int = 10, palavras_por_cena: int = 17, janelas: int = 1, gancho: str = "Um gigante"
 ) -> Roteiro:
+    # 10 × 17 = 170 palavras: dentro da faixa dos dois canais (≈ 61–80 s de narração)
     return Roteiro(
         titulo="Davi recebe a missão",
         gancho=gancho,

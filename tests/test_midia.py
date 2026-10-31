@@ -128,7 +128,22 @@ def test_avaliar_aprova_video_bom_com_alerta_de_silencio():
     assert status["Áudio"] == "ok"
     assert status["Silêncio"] == "at"
     assert status["Checagem:"] == "at"
+    assert status["Duração"] == "at"  # 54 s: não rende no TikTok, mas não reprova
     assert not reprovado(testes)
+
+
+@pytest.mark.parametrize(("segundos", "esperado"), [(59.9, "at"), (61.0, "ok"), (80.0, "ok"),
+                                                    (95.0, "at")])
+def test_duracao_para_monetizar(segundos, esperado):
+    testes = avaliar(
+        InfoMidia(1080, 1920, segundos, True),
+        Analise(lufs=-14.0, pretos=[], silencios=[]),
+        cobertura_legenda=1.0,
+        ativos_sem_licenca=0,
+        similaridade=0.1,
+        avisos_checagem=0,
+    )
+    assert next(t.status for t in testes if t.nome.startswith("Duração")) == esperado
 
 
 def test_avaliar_reprova_formato_errado_e_roteiro_repetido():

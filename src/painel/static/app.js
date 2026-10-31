@@ -6,6 +6,7 @@
 const TITULOS = {
   inicio: "Visão geral",
   aprovacao: "Aprovação",
+  plataformas: "Plataformas",
   producao: "Produção",
   canais: "Canais",
   series: "Séries",
@@ -25,8 +26,18 @@ const estado = {
   recentes: new Map(),
   itensFila: new Map(),
   inicioRevisao: new Map(),
+  legendas: new Map(),
   mensagem: null,
 };
+const ABAS_PLAT = ["publicar", "feitos", "contas"];
+const SITUACAO_PUB = { pendente: ["espera", "Pendente"], publicado: ["ok", "Publicado"], pulado: ["espera", "Pulado"] };
+const SITUACAO_CONTA = {
+  planejada: "Ainda não criei", criada: "Criada", crescendo: "Crescendo", monetizando: "Monetizando", pausada: "Pausada",
+};
+const linkExterno = (url, texto, classe = "mg-btn mg-sec mg-sm") =>
+  /^https:\/\//i.test(url || "")
+    ? `<a class="${classe}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(texto)} <span aria-hidden="true">↗</span><span class="mg-oculto"> (abre em nova aba)</span></a>`
+    : "";
 
 /* ------------------------------------------------------------------ utilidades */
 
@@ -141,6 +152,11 @@ function atualizarCabecalho(r) {
   badge.hidden = n === 0;
   badge.textContent = n > 99 ? "99+" : String(n);
   badge.closest("a").setAttribute("aria-label", n ? `Aprovação, ${plural(n, "vídeo esperando", "vídeos esperando")}` : "Aprovação");
+  const publicar = r.precisa.find((p) => p.rota === "plataformas");
+  const badgePub = document.getElementById("badge-publicar");
+  badgePub.hidden = !publicar;
+  badgePub.textContent = publicar ? String(Math.min(publicar.n || 1, 99)) : "";
+  badgePub.closest("a").setAttribute("aria-label", publicar ? `Plataformas, ${plural(publicar.n || 1, "vídeo para publicar", "vídeos para publicar")}` : "Plataformas");
   const urgente = r.precisa.some((p) => p.rota === "dinheiro" && p.nivel !== "in");
   const badgeDinheiro = document.getElementById("badge-dinheiro");
   badgeDinheiro.hidden = !urgente;
@@ -524,6 +540,7 @@ const TELAS = {
 
   async mais() {
     const ATALHOS = [
+      ["#plataformas/contas", "Contas e programas", "YouTube, TikTok, Facebook, Instagram, Kwai e Snapchat"],
       ["#config", "Configurações", "Preços, câmbio, créditos e chaves"],
       ["#saude", "Saúde do sistema", "Worker, FFmpeg, Drive e disco"],
       ["#canais", "Canais", "Liga/desliga e gatilho do próximo canal"],
@@ -542,7 +559,184 @@ const TELAS = {
       + grupo("Em breve", EM_BREVE.map(([nome, desc]) => `
         <div class="mg-card mg-atalho mg-desabilitado" aria-disabled="true"><p class="mg-forte">${nome} ${chip("espera", "em breve")}</p><p class="mg-sub">${desc}</p></div>`).join(""));
   },
+
+  async plataformas(param) {
+    const aba = ABAS_PLAT.includes(param) ? param : "publicar";
+    if (aba === "contas") {
+      const d = await api("/api/plataformas");
+      return abasPlataformas(aba, null) + telaContas(d);
+    }
+    const d = await api(`/api/publicar?aba=${aba === "feitos" ? "feitos" : "pendentes"}`);
+    estado.legendas = new Map();
+    d.itens.forEach((v) => v.plataformas.forEach((p) => estado.legendas.set(`${v.id}:${p.id}`, p.legenda)));
+    const vazio = d.itens.length
+      ? ""
+      : `<div class="mg-card mg-vazio mg-mt"><p class="mg-h2">${aba === "feitos" ? "Nada publicado nos últimos 14 dias" : "Nada para publicar agora"}</p>
+         <p class="mg-sub">${aba === "feitos" ? "Os vídeos aparecem aqui quando saem em todas as plataformas do canal." : "Aprove vídeos na fila: eles aparecem aqui com o texto pronto para cada rede."}</p>
+         ${aba === "feitos" ? "" : '<a class="mg-btn mg-sec mg-mt" href="#aprovacao">Abrir a fila</a>'}</div>`;
+    return abasPlataformas(aba, d.abas) + vazio
+      + `<section class="mg-g2 mg-mt" aria-label="Vídeos para publicar">${d.itens.map(cartaoPublicar).join("")}</section>`;
+  },
 };
+
+/* ------------------------------------------------------------------ plataformas */
+
+function abasPlataformas(aba, contagens) {
+  const n = Object.fromEntries((contagens || []).map((a) => [a.id, a.n]));
+  const botoes = [["publicar", "Para publicar", n.pendentes], ["feitos", "Publicados", n.feitos], ["contas", "Contas e programas", null]]
+    .map(([id, rotulo, qtd]) => `<button type="button" class="mg-tab" data-base="plataformas" data-aba="${id}" aria-pressed="${id === aba}">${rotulo}${qtd == null ? "" : `<span class="mg-cnt">${qtd}</span>`}</button>`)
+    .join("");
+  return `
+    <div class="mg-card mg-in mg-barra-abas">
+      <div class="mg-abas" role="group" aria-label="Plataformas">${botoes}</div>
+      <p class="mg-sub">O mesmo MP4 vai para cada rede. O painel nunca pede a sua senha: os botões abrem a página oficial.</p>
+    </div>`;
+}
+
+function cartaoPublicar(v, i) {
+  const quando = v.horario ? `Agendado para ${fmtHorario(v.horario)}` : "Sem horário";
+  const baixar = v.tem_arquivo
+    ? `<a class="mg-btn mg-pri" href="/api/videos/${encodeURIComponent(v.id)}/arquivo" download>Baixar vídeo</a>`
+    : chip("at", "MP4 não está neste aparelho");
+  const total = v.plataformas.length;
+  return `
+    <article class="mg-card mg-in" data-id="${esc(v.id)}" data-atraso="${60 + i * 40}">
+      <div class="mg-entre">
+        <div class="mg-flex1">
+          <p class="mg-com-ponto mg-forte"><span class="mg-ponto" data-cor="${esc(v.canal.cor)}"></span>${esc(v.canal.nome)}</p>
+          <h2 class="mg-titulo-video">${esc(v.titulo)}</h2>
+          <p class="mg-sub">${esc(quando)} · ${fmtDur(v.duracao)} · ${v.faltam ? `falta${v.faltam === 1 ? "" : "m"} ${v.faltam} de ${total}` : "tudo publicado"}</p>
+        </div>
+        ${baixar}
+      </div>
+      <ul class="mg-pubs" aria-label="Plataformas de ${esc(v.titulo)}">${v.plataformas.map((p) => linhaPublicacao(v, p)).join("")}</ul>
+    </article>`;
+}
+
+function linhaPublicacao(v, p) {
+  const [classe, rotulo] = SITUACAO_PUB[p.situacao] || SITUACAO_PUB.pendente;
+  const eleg = p.elegivel.status === "ok" ? chip("ok", "Duração rende") : chip(p.elegivel.status === "at" ? "at" : "espera", p.elegivel.detalhe);
+  const topo = `
+    <div class="mg-entre">
+      <p class="mg-com-ponto mg-forte"><span class="mg-ponto" data-cor="${esc(p.cor)}"></span>${esc(p.nome)}${p.conta.usuario ? ` <span class="mg-sub">${esc(p.conta.usuario)}</span>` : ""}</p>
+      <div class="mg-legenda">${chip(classe, rotulo)}${eleg}</div>
+    </div>`;
+  if (p.situacao !== "pendente") {
+    const quando = p.publicado_em ? ` em ${fmtHorario(p.publicado_em)}` : "";
+    return `
+      <li class="mg-pub" data-plat="${esc(p.id)}">${topo}
+        <div class="mg-acoes">
+          ${p.situacao === "publicado" ? `<p class="mg-sub mg-flex1">Publicado${esc(quando)}</p>${linkExterno(p.url, "Ver post")}` : '<p class="mg-sub mg-flex1">Você pulou esta plataforma.</p>'}
+          <button type="button" class="mg-btn mg-ghost mg-sm" data-acao="desfazer-pub">Desfazer</button>
+        </div>
+        <p class="mg-erro" aria-live="polite"></p>
+      </li>`;
+  }
+  const campo = `u-${esc(v.id)}-${esc(p.id)}`;
+  const abrir = p.publicacao === "app"
+    ? `<p class="mg-sub">Só pelo app: baixe o vídeo no celular e publique por lá.</p>`
+    : linkExterno(p.subir, `Abrir ${p.nome}`);
+  const copiarTitulo = p.legenda.titulo
+    ? '<button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar" data-campo="titulo">Copiar título</button>'
+    : "";
+  const dicas = p.ao_publicar.map((d) => `<li>${esc(d)}</li>`).join("");
+  return `
+    <li class="mg-pub" data-plat="${esc(p.id)}">${topo}
+      <div class="mg-acoes">
+        ${copiarTitulo}
+        <button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar" data-campo="texto">Copiar ${p.legenda.titulo ? "descrição" : "legenda"}</button>
+        ${abrir}
+        <button type="button" class="mg-btn mg-ghost mg-sm" data-acao="pular-pub">Pular</button>
+      </div>
+      <form class="mg-form-linha" data-form="publicado" novalidate>
+        <div class="mg-campo"><label for="${campo}">Link do post (opcional)</label>
+          <input class="mg-input" id="${campo}" name="url" type="url" inputmode="url" maxlength="300" placeholder="https://" aria-describedby="e-${campo}">
+          <p class="mg-erro" id="e-${campo}"></p></div>
+        <button type="submit" class="mg-btn mg-pri mg-sm">Marcar publicado</button>
+      </form>
+      <details class="mg-detalhes">
+        <summary>Ver o texto e as dicas</summary>
+        ${p.legenda.titulo ? `<p class="mg-lbl mg-mt">Título</p><textarea class="mg-input mg-texto mg-texto-curto" readonly aria-label="Título para ${esc(p.nome)}">${esc(p.legenda.titulo)}</textarea>` : ""}
+        <p class="mg-lbl mg-mt">${p.legenda.titulo ? "Descrição" : "Legenda"}</p>
+        <textarea class="mg-input mg-texto" readonly aria-label="Texto para ${esc(p.nome)}">${esc(p.legenda.texto)}</textarea>
+        ${dicas ? `<ul class="mg-lista mg-mt">${dicas}</ul>` : ""}
+      </details>
+    </li>`;
+}
+
+function telaContas(d) {
+  const aviso = d.revisar
+    ? `<p class="mg-aviso mg-c-at mg-mt">Os dados das plataformas foram conferidos há ${d.dias} dias. As regras mudam: revise o arquivo plataformas.yaml.</p>`
+    : `<p class="mg-sub mg-mt">Programas e requisitos conferidos nas páginas oficiais em ${esc(fmtData(`${d.verificado_em}T12:00:00`, { day: "2-digit", month: "2-digit", year: "numeric" }))}.</p>`;
+  const opcoes = (atual) => d.situacoes
+    .map((s) => `<option value="${esc(s)}"${s === atual ? " selected" : ""}>${esc(SITUACAO_CONTA[s] || s)}</option>`).join("");
+  const cards = d.plataformas.map((p, i) => {
+    const duracao = p.duracao_min_s ? `${p.duracao_min_s} s ou mais` : p.duracao_max_s ? `até ${p.duracao_max_s} s` : "qualquer";
+    const links = [
+      linkExterno(p.urls.entrar, "Entrar"),
+      linkExterno(p.urls.subir, "Subir vídeo"),
+      linkExterno(p.urls.painel, "Painel do criador"),
+      linkExterno(p.urls.programa, "Regras do programa", "mg-btn mg-ghost mg-sm"),
+    ].join("");
+    const contas = p.contas.length
+      ? p.contas.map((c) => formConta(p, c, opcoes)).join("")
+      : '<p class="mg-sub mg-bloco">Nenhum canal publica aqui. Adicione o id em "plataformas" no YAML do canal.</p>';
+    const riscos = p.riscos.map((r) => `<li>${esc(r)}</li>`).join("");
+    const fontes = p.fontes.map((f) => `<li>${linkExterno(f, f.replace(/^https:\/\//, ""), "mg-link")}</li>`).join("");
+    return `
+      <article class="mg-card mg-in" data-atraso="${50 + i * 40}">
+        <div class="mg-entre">
+          <h2 class="mg-h2 mg-com-ponto"><span class="mg-ponto" data-cor="${esc(p.cor)}"></span>${esc(p.nome)}</h2>
+          ${chip(p.brasil.startsWith("Sim") ? "ok" : "at", `Brasil: ${p.brasil}`)}
+        </div>
+        <p class="mg-forte mg-mt">${esc(p.programa)}</p>
+        <p class="mg-sub">${esc(p.requisitos)}</p>
+        <dl class="mg-dados">
+          <div><dt>Tipo de conta</dt><dd class="mg-pequeno">${esc(p.conta || "—")}</dd></div>
+          <div><dt>Duração que rende</dt><dd class="mg-pequeno">${esc(duracao)}</dd></div>
+          <div><dt>Como publicar</dt><dd class="mg-pequeno">${p.publicacao === "app" ? "Só pelo app" : "Navegador (PC ou celular)"}</dd></div>
+          <div><dt>Metricool</dt><dd class="mg-pequeno">${p.metricool ? "Agenda esta rede" : "Não agenda"}</dd></div>
+        </dl>
+        <div class="mg-acoes mg-mt">${links || '<p class="mg-sub">Sem página web: use o app.</p>'}</div>
+        ${contas}
+        <details class="mg-detalhes mg-mt">
+          <summary>Riscos, API e fontes</summary>
+          ${riscos ? `<ul class="mg-lista mg-mt">${riscos}</ul>` : ""}
+          <p class="mg-sub mg-mt"><b>API:</b> ${esc(p.api || "—")}</p>
+          ${fontes ? `<ul class="mg-lista mg-mt">${fontes}</ul>` : ""}
+        </details>
+      </article>`;
+  }).join("");
+  return `${aviso}<section class="mg-g2 mg-mt" aria-label="Plataformas">${cards}</section>`;
+}
+
+function formConta(p, c, opcoes) {
+  const id = `${esc(p.id)}-${esc(c.canal.id)}`;
+  const chaves = ["seguidores", ...p.metas.map((m) => m.chave).filter((k) => k !== "seguidores")];
+  const rotulo = (k) => (p.metas.find((m) => m.chave === k) || {}).rotulo || "seguidores";
+  const numeros = chaves.map((k) => `
+    <div class="mg-campo"><label for="n-${id}-${esc(k)}">${esc(rotulo(k)[0].toUpperCase() + rotulo(k).slice(1))}</label>
+      <input class="mg-input" id="n-${id}-${esc(k)}" data-numero="${esc(k)}" type="number" min="0" step="1" inputmode="numeric" value="${Number(c.numeros[k] || 0)}"></div>`).join("");
+  const metas = c.progresso.map((m) => `
+    <div class="mg-mt"><p class="mg-sub">${fmtNum(m.atual)} de ${fmtNum(m.alvo)} ${esc(m.rotulo)} (${m.pct}%)</p>${barra(m.pct, m.pct >= 100 ? "#17673F" : "#389E92")}</div>`).join("");
+  return `
+    <form class="mg-bloco" data-form="conta" data-canal="${esc(c.canal.id)}" data-plat="${esc(p.id)}" novalidate>
+      <div class="mg-entre">
+        <p class="mg-com-ponto mg-forte"><span class="mg-ponto" data-cor="${esc(c.canal.cor)}"></span>${esc(c.canal.nome)}</p>
+        ${chip(c.situacao === "monetizando" ? "ok" : c.situacao === "planejada" ? "espera" : "in", SITUACAO_CONTA[c.situacao] || c.situacao)}
+      </div>
+      ${metas}
+      <div class="mg-campos">
+        <div class="mg-campo"><label for="s-${id}">Situação</label><select class="mg-input" id="s-${id}" name="situacao">${opcoes(c.situacao)}</select></div>
+        <div class="mg-campo"><label for="us-${id}">Usuário</label><input class="mg-input" id="us-${id}" name="usuario" maxlength="60" placeholder="@nome" value="${esc(c.usuario)}"></div>
+        <div class="mg-campo mg-largura-2"><label for="ur-${id}">Link do perfil</label><input class="mg-input" id="ur-${id}" name="url" type="url" inputmode="url" maxlength="300" placeholder="https://" value="${esc(c.url)}"></div>
+        ${numeros}
+      </div>
+      <label class="mg-check"><input type="checkbox" name="seguranca"${c.seguranca ? " checked" : ""}> Verificação em 2 etapas ou passkey ativa</label>
+      <div class="mg-acoes mg-mt"><button type="submit" class="mg-btn mg-sec mg-sm">Salvar ${esc(c.canal.nome)}</button>
+        <p class="mg-erro" aria-live="polite"></p></div>
+    </form>`;
+}
 
 function pecaGrafico(g) {
   if (!g.series.length) {
@@ -731,6 +925,24 @@ async function acaoVideo(botao, id, acao, nota = "") {
   }
 }
 
+async function marcarPublicacao(botao, id, situacao, url = "") {
+  const linha = botao.closest("[data-plat]");
+  const plat = linha?.dataset.plat;
+  const soltar = ocupar(botao, situacao === "publicado" ? "Salvando…" : null);
+  try {
+    await enviar(`/api/publicacoes/${encodeURIComponent(id)}/${encodeURIComponent(plat)}`, { situacao, url });
+    estado.formSujo = false;
+    await navegar(false);
+    recarregarCabecalho();
+    const mesma = tela.querySelector(`[data-id="${CSS.escape(id)}"] [data-plat="${CSS.escape(plat)}"] button`);
+    if (mesma) mesma.focus();
+  } catch (erro) {
+    soltar();
+    const p = linha && linha.querySelector(".mg-erro");
+    if (p) p.textContent = erro.message;
+  }
+}
+
 const ACOES = {
   tentar: () => navegar(),
   aprovar: (b, id) => acaoVideo(b, id, "aprovar"),
@@ -766,6 +978,28 @@ const ACOES = {
       mostrarErroNoCartao(id, erro.message);
     }
   },
+  copiar: async (b, id) => {
+    const plat = b.closest("[data-plat]")?.dataset.plat;
+    const legenda = estado.legendas.get(`${id}:${plat}`);
+    const texto = legenda ? legenda[b.dataset.campo] || "" : "";
+    const original = b.textContent;
+    try {
+      await navigator.clipboard.writeText(texto);
+      b.textContent = "Copiado ✓";
+    } catch {
+      /* sem HTTPS a área de transferência pode ser bloqueada: mostra o texto para copiar à mão */
+      const detalhes = b.closest(".mg-pub")?.querySelector("details");
+      if (detalhes) {
+        detalhes.open = true;
+        const campo = detalhes.querySelectorAll("textarea")[b.dataset.campo === "titulo" ? 0 : detalhes.querySelectorAll("textarea").length - 1];
+        if (campo) { campo.focus(); campo.select(); }
+      }
+      b.textContent = "Selecione e copie";
+    }
+    setTimeout(() => { b.textContent = original; }, 2000);
+  },
+  "pular-pub": (b, id) => marcarPublicacao(b, id, "pulado"),
+  "desfazer-pub": (b, id) => marcarPublicacao(b, id, "pendente"),
   ligar: async (b, id) => {
     const novo = b.getAttribute("aria-checked") !== "true";
     b.disabled = true;
@@ -831,6 +1065,43 @@ const FORMULARIOS = {
       marcarErros(form, erro.dados && erro.dados.erros ? erro.dados.erros : {});
     }
   },
+  async publicado(form) {
+    const url = form.elements.url.value.trim();
+    if (url && !/^https:\/\//i.test(url)) {
+      marcarErros(form, { url: "Cole o link completo do post, começando com https://" });
+      return;
+    }
+    const id = form.closest("[data-id]").dataset.id;
+    await marcarPublicacao(form.querySelector('[type="submit"]'), id, "publicado", url);
+  },
+  async conta(form) {
+    const numeros = {};
+    form.querySelectorAll("[data-numero]").forEach((el) => {
+      numeros[el.dataset.numero] = Math.max(0, Math.round(Number(el.value) || 0));
+    });
+    const dados = {
+      situacao: form.elements.situacao.value,
+      usuario: form.elements.usuario.value.trim(),
+      url: form.elements.url.value.trim(),
+      seguranca: form.elements.seguranca.checked,
+      numeros,
+    };
+    const erro = form.querySelector(".mg-erro");
+    if (dados.url && !/^https:\/\//i.test(dados.url)) {
+      erro.textContent = "O link do perfil precisa começar com https://";
+      form.elements.url.focus();
+      return;
+    }
+    const soltar = ocupar(form.querySelector('[type="submit"]'), "Salvando…");
+    try {
+      await enviar(`/api/contas/${encodeURIComponent(form.dataset.canal)}/${encodeURIComponent(form.dataset.plat)}`, dados);
+      estado.formSujo = false;
+      await navegar(false);
+    } catch (e) {
+      soltar();
+      erro.textContent = e.message;
+    }
+  },
   async aipro(form) {
     const soltar = ocupar(form.querySelector('[type="submit"]'), "Salvando…");
     try {
@@ -850,7 +1121,7 @@ tela.addEventListener("click", (ev) => {
   const alvo = ev.target.closest("[data-acao], [data-aba]");
   if (!alvo || !tela.contains(alvo)) return;
   if (alvo.dataset.aba) {
-    location.hash = `#aprovacao/${alvo.dataset.aba}`;
+    location.hash = `#${alvo.dataset.base || "aprovacao"}/${alvo.dataset.aba}`;
     return;
   }
   const tratador = ACOES[alvo.dataset.acao];

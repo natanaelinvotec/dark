@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -137,9 +138,81 @@ def test_lote_config_e_canal(logado, con):
     assert canais["curiosidades"]["ligado"] is False
 
 
+def test_contas_das_plataformas(logado):
+    d = logado.get("/api/plataformas").json()
+    assert [p["id"] for p in d["plataformas"]] == [
+        "youtube", "tiktok", "facebook", "instagram", "kwai", "snapchat",
+    ]
+    tiktok = next(p for p in d["plataformas"] if p["id"] == "tiktok")
+    assert tiktok["duracao_min_s"] == 60 and len(tiktok["contas"]) == 2
+
+    url = "/api/contas/curiosidades/tiktok"
+    corpo = {"situacao": "criada", "usuario": "@curiosidades",
+             "url": "https://golpe.example/x", "numeros": {"seguidores": 10}}
+    assert logado.post(url, json=corpo, headers=H).status_code == 422
+    corpo["url"] = "https://www.tiktok.com/@curiosidades"
+    assert logado.post(url, json=corpo).status_code == 403
+    assert logado.post(url, json={**corpo, "numeros": {"seguidores": -1}},
+                       headers=H).status_code == 422
+    r = logado.post(url, json=corpo, headers=H)
+    assert r.status_code == 200 and r.json()["numeros"] == {"seguidores": 10}
+    assert logado.post("/api/contas/curiosidades/orkut", json=corpo,
+                       headers=H).status_code == 404
+
+
+def test_publicar_em_cada_plataforma(logado, con):
+    vid = colocar_na_fila(con, canal="curiosidades", titulo="Catatumbo")
+    base = f"/api/publicacoes/{vid}"
+    assert logado.post(f"{base}/youtube", json={"situacao": "publicado"},
+                       headers=H).status_code == 422  # ainda não foi aprovado
+    db.atualizar_video(con, vid, status="aprovado", duracao_s=55.0,
+                       roteiro_json=json.dumps({"descricao": "Raios.", "hashtags": ["ciencia"]}))
+
+    item = next(i for i in logado.get("/api/publicar").json()["itens"] if i["id"] == vid)
+    plats = {p["id"]: p for p in item["plataformas"]}
+    assert plats["tiktok"]["elegivel"]["status"] == "at"  # 55 s não rende no TikTok
+    assert plats["youtube"]["legenda"]["titulo"] == "Catatumbo"
+    assert "#ciencia" in plats["tiktok"]["legenda"]["texto"]
+
+    falso = {"situacao": "publicado", "url": "https://youtube.com.golpe.io/x"}
+    assert logado.post(f"{base}/youtube", json=falso, headers=H).status_code == 422
+    r = logado.post(f"{base}/youtube", headers=H,
+                    json={"situacao": "publicado", "url": "https://www.youtube.com/shorts/abc"})
+    assert r.status_code == 200 and r.json()["video_status"] == "publicado"
+    assert "youtube" not in r.json()["pendentes"]
+    primeiro = con.execute("SELECT publicado_em FROM publicacoes WHERE video_id = ?",
+                           (vid,)).fetchone()[0]
+    logado.post(f"{base}/youtube", headers=H,
+                json={"situacao": "publicado", "url": "https://youtu.be/abc"})
+    assert con.execute("SELECT publicado_em FROM publicacoes WHERE video_id = ?",
+                       (vid,)).fetchone()[0] == primeiro  # trocar o link não muda a data
+    r = logado.post(f"{base}/youtube", json={"situacao": "pendente"}, headers=H)
+    assert r.json()["video_status"] == "aprovado"
+
+    for p in ("youtube", "tiktok", "facebook", "instagram", "kwai", "snapchat"):
+        assert logado.post(f"{base}/{p}", json={"situacao": "pulado"}, headers=H).status_code == 200
+    feitos = logado.get("/api/publicar?aba=feitos").json()["itens"]
+    assert [i["id"] for i in feitos] == [vid]
+
+
+def test_baixar_so_aprovado_e_com_nome_seguro(logado, con, cfg_painel):
+    vid = colocar_na_fila(con)
+    renders = cfg_painel.dados / "Canal-Biblico" / "Renders"
+    renders.mkdir(parents=True)
+    (renders / f"{vid}.mp4").write_bytes(b"mp4")
+    db.atualizar_video(con, vid, arquivo=f"Canal-Biblico/Renders/{vid}.mp4",
+                       titulo="Davi: a missão!")
+    assert logado.get(f"/api/videos/{vid}/arquivo").status_code == 409
+    db.atualizar_video(con, vid, status="aprovado")
+    r = logado.get(f"/api/videos/{vid}/arquivo")
+    assert r.status_code == 200 and r.content == b"mp4"
+    assert f"biblico-manhwa-davi-a-missao-{vid}.mp4" in r.headers["content-disposition"]
+
+
 def test_todas_as_telas_respondem_com_dados_de_exemplo(logado, con):
     carregar_exemplo(con)
-    for rota in ("resumo", "fila", "producao", "canais", "series", "dinheiro", "config", "saude"):
+    for rota in ("resumo", "fila", "producao", "canais", "series", "dinheiro", "config", "saude",
+                 "plataformas", "publicar"):
         r = logado.get(f"/api/{rota}")
         assert r.status_code == 200, rota
     resumo = logado.get("/api/resumo").json()
@@ -149,6 +222,9 @@ def test_todas_as_telas_respondem_com_dados_de_exemplo(logado, con):
     dinheiro = logado.get("/api/dinheiro").json()
     assert dinheiro["receita"] == 1240
     assert dinheiro["sobra"] == pytest.approx(1240 - 178)
+    publicar = logado.get("/api/publicar").json()
+    assert {i["titulo"] for i in publicar["itens"]} >= {"O gigante de Gate desafia Israel"}
+    assert any(p["rota"] == "plataformas" for p in resumo["precisa"])
 
 
 def test_logout_encerra_a_sessao(logado):

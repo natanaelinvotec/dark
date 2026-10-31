@@ -41,8 +41,15 @@ def test_janela_sem_referencia_ou_cena_inexistente(canais):
 
 
 def test_curiosidades_nao_aceita_janelas(canais):
-    r = fazer_roteiro(cenas=10, palavras_por_cena=13, janelas=1)
-    assert any("janelas" in p for p in validar_roteiro(r, canais["curiosidades"]))
+    r = fazer_roteiro(janelas=1)
+    problemas = validar_roteiro(r, canais["curiosidades"])
+    assert problemas == ["1 janelas de missão (o canal pede 0 a 0)"]
+
+
+def test_prompt_pede_mais_de_um_minuto(canais):
+    prompt = montar_prompt_roteiro(canais["curiosidades"], "Catatumbo")
+    assert "61 a 80 segundos" in prompt
+    assert "1 minuto" in prompt
 
 
 def test_pauta_entra_delimitada_como_dado(canais):

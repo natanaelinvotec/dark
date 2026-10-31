@@ -10,14 +10,17 @@ idioma: pt-BR
 descricao: Histórias bíblicas em manhwa com janelas de missão
 pasta: Canal-Biblico            # relativa a ESTUDIO_DADOS
 horarios: ["12:00", "19:00"]
+# onde cada vídeo deste canal é publicado (ids de plataformas.yaml)
+plataformas: [youtube, tiktok, facebook, instagram, kwai, snapchat]
 
 formato:
-  short_segundos: [45, 60]
-  tiktok_segundos: [61, 85]
-  palavras_min: 110
-  palavras_max: 160
-  cenas_min: 8
-  cenas_max: 12
+  # 61–80 s: o TikTok só paga vídeos com 1 min ou mais; Reels via API vai até 90 s
+  short_segundos: [61, 80]
+  tiktok_segundos: [61, 80]
+  palavras_min: 150
+  palavras_max: 190
+  cenas_min: 9
+  cenas_max: 13
   janelas_min: 1
   janelas_max: 2
 

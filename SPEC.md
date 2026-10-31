@@ -1,13 +1,16 @@
 # Spec: Estúdio de Canais
 
-> Versão 1 · 31/10/2026 · Estratégia e riscos em `tasks/plan.md`; tarefas em `tasks/todo.md`; desenho das telas no mockup "Painel do Estúdio de Canais".
+> Versão 1.1 · 31/10/2026 · Estratégia e riscos em `tasks/plan.md`; tarefas em `tasks/todo.md`; desenho das telas no mockup "Painel do Estúdio de Canais".
+> 1.1: seis plataformas (YouTube, TikTok, Facebook, Instagram, Kwai, Snapchat) com publicação assistida; vídeos de 61–80 s; instalação com um clique no Windows.
 
 ## Premissas (já combinadas)
 1. Um único usuário (o dono). Acesso ao painel só pela rede Tailscale **e** com senha.
 2. Arquivos de trabalho na pasta do **Google Drive sincronizada** no PC/VPS ("Drive para computador"); o programa lê e grava como pasta local.
 3. Sem Firebase. Estado em **SQLite**.
-4. Publicação v1 = **pacote de agendamento** (pasta do dia + CSV). API do YouTube só depois da auditoria.
+4. Publicação v1 = **pacote de agendamento** (pasta do dia + CSV) + **publicação assistida** na tela Plataformas: o painel baixa o MP4, copia a legenda no formato de cada rede e abre a página oficial de envio; o dono sobe e cola o link. APIs de publicação só depois de auditoria/aprovação de cada plataforma.
 5. Quadros do canal bíblico e ganchos animados são **feitos à mão** (assinatura Google AI Pro, sem API); o pipeline prepara os prompts e espera os arquivos.
+6. Duração-alvo **61–80 s**: rende em todas as redes (TikTok ≥ 60 s; Reels pela API ≤ 90 s; Spotlight ≥ 30 s).
+7. Roda no **PC do dono** (ligado com `iniciar.bat`); celular acessa pela Tailscale.
 
 ## Mapa de módulos
 
@@ -36,7 +39,9 @@ Reduzir o trabalho humano a **≈8 min por vídeo**: a máquina pesquisa, escrev
 
 ## Comandos
 ```
+Tudo de uma vez ..... instalar.bat (Windows) · iniciar.bat · parar.bat
 Instalar ............ uv sync --all-extras
+Configurar .env ..... uv run estudio configurar [--dados "G:/Meu Drive/Estudio"] [--trocar-senha]
 Criar banco/pastas .. uv run estudio init
 Dados de exemplo .... ESTUDIO_DB=dados/exemplo.db uv run estudio seed-exemplo  (recusa banco com vídeos)
 Gerar hash da senha . uv run estudio senha
@@ -52,7 +57,9 @@ Docker .............. docker compose up -d
 
 ## Estrutura
 ```
-channels/            um YAML por canal (enabled liga/desliga)
+channels/            um YAML por canal (enabled liga/desliga; plataformas onde publica)
+plataformas.yaml     programas, requisitos, links oficiais e domínios aceitos de cada rede
+scripts/             instalar/iniciar/parar no Windows (chamados pelos .bat da raiz)
 tasks/               plan.md e todo.md
 assets/fonts/        fontes OFL da janela de missão e das legendas
 src/estudio/         núcleo + pipeline + CLI
@@ -76,6 +83,10 @@ tests/               pytest (sem rede; ffmpeg real só nos testes marcados)
 | `receitas` | mes, fonte, valor_brl, situacao `prevista/aprovada/paga` |
 | `campanhas` | nome, tipo, valor_mil_usd, teto_views, views_aprovadas, horas, situacao |
 | `config` | chave, valor (teto, câmbio, preços, batimento do worker) |
+| `contas` | (canal_id, plataforma) → usuario, url, situacao `planejada/criada/crescendo/monetizando/pausada`, seguranca (2FA), numeros_json |
+| `publicacoes` | (video_id, plataforma) → situacao `pendente/publicado/pulado`, url do post, publicado_em |
+
+Um vídeo vira `publicado` quando sai em ao menos uma plataforma e volta a `aprovado` se todas forem desfeitas.
 
 `videos.status`: `pauta → produzindo ⇄ voce → fila | reprovado → aprovado | rejeitado | refazer → publicado`.
 Etapas: `pauta, roteiro, checagem, quadros, gancho, voz, montagem, testes`; status de etapa: `espera, rodando, voce, feito, erro, pulado`.
@@ -95,6 +106,11 @@ Etapas: `pauta, roteiro, checagem, quadros, gancho, voz, montagem, testes`; stat
 | `GET /api/dinheiro` | cascata, custos de IA, campanhas |
 | `GET /api/config` · `POST /api/config` | teto, câmbio, preços; chaves só como "configurada sim/não" |
 | `GET /api/saude` | batimento do worker, último evento, disco, FFmpeg, pasta do Drive |
+| `GET /api/plataformas` | cada rede: programa, requisitos, Brasil, links oficiais, metas e a conta de cada canal |
+| `POST /api/contas/{canal}/{plataforma}` | @, link do perfil (https no domínio da rede), situação, 2FA, números |
+| `GET /api/publicar?aba=pendentes\|feitos` | vídeos aprovados × plataformas: legenda pronta, elegibilidade pela duração, situação |
+| `POST /api/publicacoes/{id}/{plataforma}` `{situacao, url?}` | marcar publicado/pulado/pendente; link conferido no domínio da rede |
+| `GET /api/videos/{id}/arquivo` | baixa o MP4 (só aprovado/publicado), nome ASCII seguro |
 
 Todo `POST` exige o cabeçalho `X-Estudio: 1` (defesa contra CSRF junto com SameSite=Strict).
 
@@ -127,7 +143,7 @@ def validar_roteiro(r: Roteiro, canal: Canal) -> list[str]:
 ## Limites
 - **Sempre:** humano assiste e aprova cada vídeo; validar saída da LLM; registrar licença de cada ativo; segredos só no ambiente; rodar testes antes de commit.
 - **Perguntar antes:** dependência nova; mudança no esquema do banco; publicar via API; subir o teto de gasto.
-- **Nunca:** criar contas ou canais automaticamente; aprovar em lote; publicar sem aprovação; repostar o mesmo vídeo em canais diferentes; responder comentários sem revisão; devolver chaves pela API; expor o painel em porta pública.
+- **Nunca:** criar contas ou canais automaticamente; aprovar em lote; publicar sem aprovação; repostar o mesmo vídeo em canais diferentes; responder comentários sem revisão; devolver chaves pela API; expor o painel em porta pública; pedir, guardar ou digitar senha de qualquer plataforma (o painel só abre a página oficial).
 
 ## Critérios de sucesso
 1. `uv run pytest -q` verde e `uv run ruff check .` limpo na máquina do dono e no CI.

@@ -15,18 +15,27 @@ lote → roteiro (Gemini) → checagem → quadros (você no Gemini, ou Pexels/P
 
 Cada canal é um arquivo em `channels/`. Os arquivos de trabalho ficam na pasta do Google Drive sincronizada.
 
-## Primeiros passos (Windows, PowerShell)
+## Primeiros passos (Windows)
+
+Dê dois cliques em **`instalar.bat`**. Ele instala o uv e o FFmpeg, baixa as bibliotecas, pergunta
+a senha do painel, a pasta do Drive e as chaves (que ficam só no `.env` deste PC), cria as pastas
+dos canais, roda os testes e, se você quiser, configura a Tailscale e liga tudo com o Windows.
+Pode rodar de novo quando quiser: o que já está pronto é pulado.
+
+Depois, no dia a dia:
+
+| Arquivo | O que faz |
+|---|---|
+| `iniciar.bat` | liga o painel e o worker em segundo plano e abre http://127.0.0.1:8787 |
+| `parar.bat` | desliga os dois |
+| `instalar.bat` | reinstala ou muda a configuração (`uv run estudio configurar --trocar-senha` troca só a senha) |
+
+Registros ficam em `dados\logs`. Preferir fazer à mão:
 
 ```powershell
-winget install astral-sh.uv
-winget install Gyan.FFmpeg
-cd C:\Users\kungamble\Documents\Projetos\dark
-
-uv sync --all-extras          # instala tudo e cria o uv.lock
-Copy-Item .env.example .env   # depois edite o .env
-uv run estudio senha          # cole a linha inteira no .env (com as aspas)
-uv run python -c "import secrets; print(secrets.token_urlsafe(48))"   # ESTUDIO_SEGREDO_SESSAO
-uv run estudio init           # cria o banco e as pastas no Drive
+uv sync --all-extras
+uv run estudio configurar     # cria o .env: segredo, senha, pasta do Drive e chaves
+uv run estudio init
 uv run estudio painel         # http://127.0.0.1:8787
 ```
 
@@ -59,12 +68,29 @@ Aprovados viram pacote com:
 uv run estudio pacote --data 2026-11-01
 ```
 
+## Publicar nas plataformas (tela Plataformas)
+
+Os vídeos têm 61–80 s: é a faixa que rende em todas as redes (o TikTok só paga a partir de 1 min,
+e o Reels pela API vai até 90 s). Cada canal lista onde publica em `plataformas:` no YAML.
+
+- **Para publicar:** cada vídeo aprovado aparece com uma linha por plataforma. **Baixar vídeo** salva
+  o MP4 (no celular também), **Copiar legenda** já vem no formato da rede, **Abrir …** vai direto
+  para a página de envio oficial. Depois cole o link do post e clique em **Marcar publicado**
+  (ou **Pular**). O Kwai só aceita envio pelo app.
+- **Contas e programas:** o programa de cada rede, os requisitos, se vale no Brasil, os links de
+  entrar/subir/painel e, por canal, o seu @, a situação, a verificação em 2 etapas e os números
+  (seguidores, views…) com o progresso até a meta.
+- O painel **nunca pede nem guarda senha** das plataformas. As regras ficam em `plataformas.yaml`,
+  com a data em que foram conferidas; o painel avisa quando passarem de 90 dias.
+
 ## Acesso pelo celular
 
-Instale a Tailscale no PC e no celular e publique o painel só na sua rede:
+O `instalar.bat` configura isso se você responder "s". À mão: instale a Tailscale no PC e no
+celular, entre na mesma conta e publique o painel só na sua rede:
 
 ```powershell
-tailscale serve --bg https / http://127.0.0.1:8787
+tailscale serve --bg http://127.0.0.1:8787
+tailscale serve status        # mostra o endereço https para abrir no celular
 ```
 
 Com HTTPS da Tailscale, ponha `ESTUDIO_COOKIE_SEGURO=1` no `.env`.
@@ -97,7 +123,9 @@ Cada `push` roda o CI (ruff, pytest, pip-audit) na aba **Actions**.
 ## Estrutura
 
 ```
-channels/            um YAML por canal (enabled liga/desliga)
+channels/            um YAML por canal (enabled liga/desliga; plataformas onde publica)
+plataformas.yaml     programas, requisitos e links oficiais de cada rede (conferidos em 31/10/2026)
+scripts/             instalar, iniciar e parar no Windows (chamados pelos .bat da raiz)
 src/estudio/         núcleo, pipeline e linha de comando
 src/painel/          API (FastAPI), segurança, consultas e front (static/)
 tests/               pytest

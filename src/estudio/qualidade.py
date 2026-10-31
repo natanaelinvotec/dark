@@ -30,6 +30,9 @@ class Analise:
 class Limites:
     duracao_min: float = 15
     duracao_max: float = 180
+    # faixa que rende em todas as redes: TikTok paga a partir de 60 s; Reels pela API vai até 90 s
+    monetiza_min: float = 60
+    monetiza_max: float = 90
     lufs_alvo: float = -14
     preto_max: float = 0.5
     silencio_at: float = 1.5
@@ -92,6 +95,16 @@ def avaliar(
             f"{info.largura}×{info.altura}, {info.duracao:.1f} s",
         )
     )
+
+    # alerta, não reprova: o vídeo ainda serve para alcance, só não rende em todas as plataformas
+    if info.duracao < limites.monetiza_min:
+        detalhe = f"{info.duracao:.0f} s: o TikTok só paga vídeos com 1 min ou mais"
+    elif info.duracao > limites.monetiza_max:
+        detalhe = f"{info.duracao:.0f} s: Reels pela API aceita até {limites.monetiza_max:.0f} s"
+    else:
+        detalhe = f"{info.duracao:.0f} s: dentro da faixa que rende em todas as redes"
+    dentro = limites.monetiza_min <= info.duracao <= limites.monetiza_max
+    testes.append(Teste("Duração p/ monetizar", "ok" if dentro else "at", detalhe))
 
     if not info.tem_audio or analise.lufs is None:
         testes.append(Teste("Áudio", "cr", "sem áudio ou sem medição de volume"))

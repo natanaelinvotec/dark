@@ -23,7 +23,10 @@ def gerar_pacote(con: sqlite3.Connection, dia: date, dados: Path, destino: Path)
     pasta.mkdir(parents=True, exist_ok=True)
     linhas = con.execute(
         "SELECT v.*, c.nome AS canal_nome FROM videos v JOIN canais c ON c.id = v.canal_id "
-        "WHERE v.status = 'aprovado' AND substr(v.horario, 1, 10) = ? ORDER BY v.horario",
+        # 'publicado' também: o vídeo muda de status quando sai na 1ª plataforma, e o pacote
+        # do dia continua valendo para as outras
+        "WHERE v.status IN ('aprovado', 'publicado') AND substr(v.horario, 1, 10) = ? "
+        "ORDER BY v.horario",
         (dia.isoformat(),),
     ).fetchall()
 

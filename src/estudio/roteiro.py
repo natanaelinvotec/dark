@@ -150,7 +150,8 @@ def montar_prompt_roteiro(
         f"Você escreve roteiros de vídeos curtos verticais para o canal '{canal.nome}' "
         f"({canal.descricao}), em português do Brasil, linguagem simples e conversada, sem emojis.",
         f"Duração: {f.short_segundos[0]} a {f.short_segundos[1]} segundos de narração, "
-        f"entre {f.palavras_min} e {f.palavras_max} palavras no total.",
+        f"entre {f.palavras_min} e {f.palavras_max} palavras no total. Nunca fique abaixo de "
+        f"{f.short_segundos[0]} segundos: o TikTok só paga vídeos com 1 minuto ou mais.",
         f"Divida em {f.cenas_min} a {f.cenas_max} cenas. A primeira cena começa pelo gancho "
         "(até 12 palavras, a informação mais surpreendente). A última fecha com um convite para "
         "seguir o canal.",
