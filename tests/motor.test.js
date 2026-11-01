@@ -202,7 +202,8 @@ test("editar canal: mantém o id e o que veio do modelo", () => {
   assert.equal(c.nome, "Curiosidades BR");
   assert.deepEqual(c.horarios, ["09:00"]);
   assert.deepEqual(c.formato.short_segundos, [62, 75]);
-  assert.equal(c.formato.palavras_max, 195, "o resto do formato continua");
+  assert.equal(c.formato.palavras_max, 180, "a meta de palavras acompanha a duração nova");
+  assert.equal(c.formato.cenas_max, 16, "o resto do formato continua");
   assert.equal(M.proximoHorario(e, c, AGORA), "2026-11-03T09:00:00-03:00");
   assert.throws(() => M.post(e, "/api/canais/nao-existe", FORM_CANAL, AGORA), (err) => err.status === 404);
 });

@@ -330,6 +330,9 @@
     return slug;
   }
   const idsPlataformas = (e) => e.plataformas.plataformas.map((p) => p.id);
+  /** Meta de palavras da narração para uma faixa de duração (cerca de 2,4 a 2,5 palavras por segundo). */
+  const palavrasPara = ([dmin, dmax]) => ({ palavras_min: Math.round(dmin * 2.45), palavras_max: Math.round(dmax * 2.4) });
+  const mesmaFaixa = (a, b) => Array.isArray(a) && Array.isArray(b) && a[0] === b[0] && a[1] === b[1];
   const duracaoDo = (c) => {
     const d = ((c || {}).formato || {}).short_segundos;
     return Array.isArray(d) && d.length === 2 ? d : DURACAO_PADRAO;
@@ -374,7 +377,12 @@
       idioma: "pt-BR", producao: { quadros: "manual", gancho: "nenhum", voz: "tts" }, roteiro: { instrucoes: "" }, personagens: [],
       ...herdado,
       slug, nome: v.nome, cor: v.cor, descricao: v.descricao, horarios: v.horarios, plataformas: v.plataformas,
-      formato: { ...(herdado.formato || {}), short_segundos: v.duracao, tiktok_segundos: v.duracao },
+      formato: {
+        ...(herdado.formato || {}),
+        // duração diferente da do modelo: a meta de palavras acompanha
+        ...(mesmaFaixa((herdado.formato || {}).short_segundos, v.duracao) ? {} : palavrasPara(v.duracao)),
+        short_segundos: v.duracao, tiktok_segundos: v.duracao,
+      },
       modelo: modelo ? modelo.id : "", ligado: true, criadoEm: isoBR(agora), atualizadoEm: isoBR(agora),
     };
     return {
@@ -386,9 +394,11 @@
   function editarCanal(e, slug, corpo, agora) {
     if (!e.canais[slug]) throw new Invalido("canal não encontrado", 404);
     const v = validarCanal(e, corpo);
+    const mudouDuracao = !mesmaFaixa(duracaoDo(e.canais[slug]), v.duracao);
     const patch = {
       nome: v.nome, cor: v.cor, descricao: v.descricao, horarios: v.horarios, plataformas: v.plataformas,
-      formato: { short_segundos: v.duracao, tiktok_segundos: v.duracao }, atualizadoEm: isoBR(agora),
+      formato: { short_segundos: v.duracao, tiktok_segundos: v.duracao, ...(mudouDuracao ? palavrasPara(v.duracao) : {}) },
+      atualizadoEm: isoBR(agora),
     };
     return {
       resposta: { slug, nome: v.nome },

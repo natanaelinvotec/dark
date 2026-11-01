@@ -22,7 +22,7 @@
     if (tipo === "historia") {
       return S.object({
         properties: {
-          titulo: S.string(), historia: S.string(), resumo: S.string(),
+          titulo: S.string(), referencia: S.string(), historia: S.string(), resumo: S.string(),
           novos_personagens: lista({ nome: S.string(), aparencia: S.string(), roupas: S.string(), personalidade: S.string() }),
           novos_cenarios: lista({ nome: S.string(), descricao: S.string() }),
         },
@@ -31,7 +31,8 @@
     if (tipo === "quadros") {
       const pers = info.personagens.length ? S.enumString({ enum: info.personagens }) : S.string();
       const quadro = {
-        trecho: S.string(), personagens: S.array({ items: pers }), acao_en: S.string(), enquadramento_en: S.string(),
+        trecho: S.string(), direcao: S.string(), sfx: S.string(), personagens: S.array({ items: pers }),
+        enquadramento_en: S.string(), acao_en: S.string(), movimento_en: S.string(),
       };
       if (info.cenarios.length) quadro.cenario = S.enumString({ enum: info.cenarios });
       return S.object({
@@ -128,12 +129,12 @@
         `E, no último instante, ${outro.nome} faz um movimento que ninguém esperava.`,
         "O que vem agora vai mudar o destino de todos.",
       ].join(" ");
-      return { titulo, historia, resumo: `${heroi.nome} enfrenta o capítulo ${n}. ${outro.nome} prepara uma surpresa.`, novos_personagens: [], novos_cenarios: [] };
+      return { titulo, referencia: `Referência do capítulo ${n}`, historia, resumo: `${heroi.nome} enfrenta o capítulo ${n}. ${outro.nome} prepara uma surpresa.`, novos_personagens: [], novos_cenarios: [] };
     }
     if (tipo === "quadros") {
       const narracao = String(texto).split("NARRAÇÃO:\n")[1] || "";
       const frases = narracao.match(/[^.!?]+[.!?]+/g) || [narracao];
-      const alvo = Math.max(1, Math.min(frases.length, Number((/em (\d+) a/.exec(texto) || [])[1]) || 9));
+      const alvo = Math.max(1, Math.min(frases.length, Number((/em (\d+) a \d+ blocos/.exec(texto) || [])[1]) || 9));
       const porQuadro = Math.ceil(frases.length / alvo);
       const nomes = nomesDo(texto);
       const quadros = [];
@@ -142,8 +143,11 @@
         quadros.push({
           trecho,
           personagens: nomes.filter((p) => trecho.includes(p.nome) && info.personagens.includes(p.id)).map((p) => p.id),
+          direcao: i === 0 ? "[tom grave e solene]" : "[pausa dramática - Selah]",
+          sfx: i === 0 ? "vento uivante, coro grave" : "trovão distante",
+          enquadramento_en: i === 0 ? "wide establishing shot" : i % 2 ? "dramatic low-angle shot" : "close-up on the eyes",
           acao_en: `[demo] scene for: ${trecho.slice(0, 80)}`,
-          enquadramento_en: i === 0 ? "wide establishing shot" : i % 2 ? "medium shot" : "close-up",
+          movimento_en: "slow camera push-in, glowing particles drifting upward",
         });
       }
       return { quadros };

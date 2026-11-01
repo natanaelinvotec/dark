@@ -16,8 +16,9 @@
   const L = {
     nome: 60, premissa: 2000, regras: 3000, estilo: 600, evitar: 400, campo: 400, ficha: 700, personagens: 30,
     cenarios: 30, arco: 200, historia: 5000, titulo: 80, resumo: 600, ideia: 600, quadros: 20, trecho: 800,
-    acao: 700, enquadramento: 240,
+    acao: 700, enquadramento: 240, direcao: 200, sfx: 240, movimento: 500, referencia: 120,
   };
+  const SEGUNDOS_POR_BLOCO = 6.5; // blocos de 5 a 8 s de leitura
   const ESTILO_PADRAO = "vertical 9:16 illustration, consistent character design across panels, clean line art, cinematic lighting, no text, no logos, no watermark";
 
   const idCapitulo = (serie, n) => `${serie}--${String(n).padStart(3, "0")}`;
@@ -39,20 +40,24 @@
 
   /* ------------------------------------------------------------ prompt de cada quadro */
 
-  /** Prompt de imagem de um quadro: estilo + ação + ficha fixa de cada personagem + cenário. */
+  /** Prompt de imagem de um quadro, na ordem das diretrizes do estúdio:
+      [câmera] + [ação] + [token fixo de cada personagem] + [cenário] + [sufixo de estilo, sempre no fim].
+      Nome próprio nunca entra: o gerador de imagem não sabe quem é "Adão"; entra o token inteiro. */
   function montarPrompt(serie, quadro) {
     const pers = (quadro.personagens || []).map((id) => (serie.personagens || []).find((p) => p.id === id)).filter(Boolean);
     const cen = (serie.cenarios || []).find((c) => c.id === quadro.cenario);
-    const evitar = String(serie.evitar_en || serie.evitar || "").trim();
+    const limpar = (t) => String(t || "").trim().replace(/[\s.,;]+$/, "");
     return [
-      String(serie.estilo || ESTILO_PADRAO).trim(),
-      quadro.acao_en ? `Scene: ${String(quadro.acao_en).trim()}` : "",
-      quadro.enquadramento_en ? `Framing: ${String(quadro.enquadramento_en).trim()}` : "",
-      ...pers.map((p) => `${p.nome}: ${fichaDe(p)}`),
-      cen ? `Setting, ${cen.nome}: ${fichaDe(cen)}` : "",
-      evitar ? `Avoid: ${evitar}` : "",
-    ].filter(Boolean).join("\n");
+      limpar(quadro.enquadramento_en),
+      limpar(quadro.acao_en),
+      pers.map((p) => limpar(fichaDe(p))).filter(Boolean).join(", and "),
+      cen ? limpar(fichaDe(cen)) : "",
+      limpar(serie.estilo || ESTILO_PADRAO),
+    ].filter(Boolean).join(", ") + ".";
   }
+
+  /** O que evitar vai à parte (campo "negative prompt" dos geradores), para o sufixo continuar no fim. */
+  const montarNegativo = (serie) => String(serie.evitar_en || serie.evitar || "").trim();
 
   /* ------------------------------------------------------------ formato vindo do canal */
 
@@ -85,6 +90,8 @@
         personalidade: texto(p.personalidade, L.campo), ficha: texto(p.ficha ?? antigo.ficha, 200),
         ficha_en: texto(p.ficha_en ?? antigo.ficha_en, L.ficha), ficha_de: texto(p.ficha_de ?? antigo.ficha_de, 16),
       };
+      // token em inglês escrito à mão: vale para o texto atual (a IA não reescreve por cima)
+      if (p.ficha_manual === true && item.ficha_en) item.ficha_de = baseFicha(item);
       return item;
     }).filter(Boolean);
   }
@@ -97,10 +104,12 @@
       for (let i = 2; usados.has(id); i += 1) id = `${slugDe(nome)}-${i}`;
       usados.add(id);
       const antigo = (antigos || []).find((x) => x.id === id) || {};
-      return {
+      const item = {
         id, nome, descricao: texto(c.descricao, L.campo),
         ficha_en: texto(c.ficha_en ?? antigo.ficha_en, L.ficha), ficha_de: texto(c.ficha_de ?? antigo.ficha_de, 16),
       };
+      if (c.ficha_manual === true && item.ficha_en) item.ficha_de = baseFicha(item);
+      return item;
     }).filter(Boolean);
   }
   function limparArco(bruto, meta) {
@@ -187,6 +196,7 @@
     const patch = { serie: serieId, n: num, atualizadoEm: isoBR(agora) };
     if (!atual) patch.criadoEm = isoBR(agora);
     if ("titulo" in corpo) patch.titulo = texto(corpo.titulo, L.titulo);
+    if ("referencia" in corpo) patch.referencia = texto(corpo.referencia, L.referencia);
     if ("historia" in corpo) patch.historia = texto(corpo.historia, L.historia);
     if ("resumo" in corpo) patch.resumo = texto(corpo.resumo, L.resumo);
     if ("ideia" in corpo) patch.ideia = texto(corpo.ideia, L.ideia);
@@ -199,6 +209,9 @@
         cenario: cens.has(q.cenario) ? q.cenario : "",
         acao_en: texto(q.acao_en, L.acao),
         enquadramento_en: texto(q.enquadramento_en, L.enquadramento),
+        direcao: texto(q.direcao, L.direcao),
+        sfx: texto(q.sfx, L.sfx),
+        movimento_en: texto(q.movimento_en, L.movimento),
       })).filter((q) => q.acao_en || q.trecho);
       // os quadros valem para a história de onde saíram (se a história mudar, ficam desatualizados)
       patch.quadros_de = hashTexto("para" in corpo ? texto(corpo.para, L.historia) : (patch.historia ?? (atual || {}).historia));
@@ -244,7 +257,7 @@
     const pedido = Number(consulta.get("cap"));
     const proximo = Math.min(meta, (caps.length ? caps[caps.length - 1].n : 0) + 1);
     const n = Number.isInteger(pedido) && pedido >= 1 && pedido <= meta ? pedido : proximo;
-    const cap = (e.capitulos || {})[idCapitulo(escolhida, n)] || { n, titulo: "", historia: "", resumo: "", ideia: "", quadros: [] };
+    const cap = (e.capitulos || {})[idCapitulo(escolhida, n)] || { n, titulo: "", referencia: "", historia: "", resumo: "", ideia: "", quadros: [] };
     const formato = formatoDo(e.canais[s.canal]);
     const historia = cap.historia || "";
     const nPal = palavras(historia);
@@ -262,13 +275,25 @@
       capitulos: caps.map((c) => ({ n: c.n, titulo: c.titulo || "", pronto: Boolean(c.historia) })),
       formato,
       cap: {
-        n, existe: Boolean((e.capitulos || {})[idCapitulo(escolhida, n)]), titulo: cap.titulo || "", historia, resumo: cap.resumo || "",
+        n, existe: Boolean((e.capitulos || {})[idCapitulo(escolhida, n)]), titulo: cap.titulo || "", referencia: cap.referencia || "",
+        historia, resumo: cap.resumo || "", negativo: montarNegativo(s),
+        em_cena: [...new Set((cap.quadros || []).flatMap((q) => q.personagens || []))]
+          .map((id) => ((s.personagens || []).find((p) => p.id === id) || {}).nome).filter(Boolean),
         ideia: cap.ideia || "", palavras: nPal, segundos: Math.round(nPal / PALAVRAS_POR_SEGUNDO),
         batida: (s.arco || []).find((a) => a.n === n) || null,
         desatualizado: Boolean(historia) && (cap.quadros || []).length > 0 && cap.quadros_de !== hashTexto(historia),
         sem_quadros: Boolean(historia) && !(cap.quadros || []).length,
-        quadros: (cap.quadros || []).map((q, i) => ({
-          n: i + 1, trecho: q.trecho || "", prompt: montarPrompt(s, q),
+        quadros: (() => {
+          let t = 0;
+          return (cap.quadros || []).map((q, i) => {
+            const dur = Math.max(1, Math.round(palavras(q.trecho) / PALAVRAS_POR_SEGUNDO));
+            const inicio = t;
+            t += dur;
+            return { q, i, inicio, fim: t };
+          });
+        })().map(({ q, i, inicio, fim }) => ({
+          n: i + 1, trecho: q.trecho || "", prompt: montarPrompt(s, q), inicio, fim,
+          direcao: q.direcao || "", sfx: q.sfx || "", movimento: q.movimento_en || "",
           personagens: (q.personagens || []).map((id) => ((s.personagens || []).find((p) => p.id === id) || {}).nome).filter(Boolean),
           cenario: ((s.cenarios || []).find((c) => c.id === q.cenario) || {}).nome || "",
           referencias: (q.personagens || []).map((id) => ((s.personagens || []).find((p) => p.id === id) || {}).ficha).filter(Boolean),
@@ -311,22 +336,26 @@
       anterior ? `CAPÍTULO ANTERIOR COMPLETO (${anterior.n}. ${anterior.titulo}):\n${anterior.historia}` : "",
       ideia ? `DIREÇÃO DO AUTOR PARA ESTE CAPÍTULO: ${texto(ideia, L.ideia)}` : "",
       `FORMATO: narração em português do Brasil com ${f.palavras[0]} a ${f.palavras[1]} palavras (vídeo de ${f.duracao[0]} a ${f.duracao[1]} s). Frases curtas, boas para voz. A primeira frase prende a atenção; a última deixa um gancho para o capítulo ${Math.min(n + 1, meta)}.`,
-      "Devolva: titulo (até 60 letras), historia (só a narração), resumo (2 frases: o que mudou na história), novos_personagens e novos_cenarios (só se a história precisou de alguém ou de um lugar que não está na bíblia; senão, listas vazias).",
+      "Devolva: titulo (até 60 letras, clicável, estilo saga épica), referencia (livro capítulo:versículos que este capítulo narra, ex.: Gênesis 1:1-5), historia (só a narração, sem marcações), resumo (2 frases: o que mudou na história), novos_personagens e novos_cenarios (só se a história precisou de alguém ou de um lugar que não está na bíblia; senão, listas vazias).",
     ].filter(Boolean).join("\n");
   }
 
   /** Pedido para dividir a história em quadros (a IA não descreve aparência: isso vem da bíblia). */
   function pedidoQuadros(e, serieId, historia) {
     const s = exigirSerie(e, serieId);
-    const f = formatoDo(e.canais[s.canal]);
+    const segundos = palavras(historia) / PALAVRAS_POR_SEGUNDO;
+    const alvo = Math.max(3, Math.round(segundos / SEGUNDOS_POR_BLOCO));
     return [
-      `Divida a narração abaixo em ${f.quadros[0]} a ${f.quadros[1]} quadros de quadrinho vertical, na ordem.`,
-      "Para cada quadro devolva:",
-      "- trecho: a(s) frase(s) da narração que o quadro cobre, sem mudar o texto;",
+      `Divida a narração abaixo em ${Math.max(3, alvo - 1)} a ${alvo + 1} blocos de 5 a 8 segundos de leitura (cerca de 13 a 20 palavras cada), na ordem. Cada bloco vira um quadro de manhwa vertical.`,
+      "Para cada bloco devolva:",
+      "- trecho: a(s) frase(s) exatas da narração que o bloco cobre, sem mudar o texto;",
+      "- direcao: marcações de entonação para o narrador, entre colchetes, ex.: [tom grave e solene] [pausa dramática - Selah] [sussurro] [tom urgente];",
+      "- sfx: efeitos sonoros e trilha, em português, ex.: trovão distante, vento uivante, coro grave crescendo;",
       "- personagens: ids de quem aparece na imagem (só da lista abaixo; lista vazia se ninguém aparece);",
       "- cenario: id do cenário (da lista; vazio se nenhum serve);",
-      "- acao_en: em inglês, o que se vê: ação, pose, expressão, objetos, luz. NÃO descreva rosto, cabelo, corpo nem roupa dos personagens (isso vem da ficha fixa de cada um);",
-      "- enquadramento_en: em inglês, plano e ângulo (ex.: close-up, low angle, wide establishing shot).",
+      "- enquadramento_en: em inglês, câmera e enquadramento de diretor de anime (ex.: extreme low-angle shot, dramatic close-up on the eyes, wide establishing shot);",
+      "- acao_en: em inglês, a ação e a emoção da cena, com iluminação cinematográfica (chiaroscuro, rim light), partículas de luz ou fogo e speedlines sutis quando couber. NÃO descreva rosto, cabelo, corpo nem roupa dos personagens (isso vem do token fixo de cada um) e NÃO use nomes próprios;",
+      "- movimento_en: em inglês, instrução curta para IA de imagem-para-vídeo (Kling, Runway, Luma): movimento de câmera e do ambiente, ex.: slow camera push-in, glowing embers floating upward, cloak billowing in strong wind.",
       "Personagens:",
       ...(s.personagens || []).map((p) => `- ${p.id}: ${p.nome}; personalidade: ${p.personalidade || "—"}`),
       ...(s.cenarios || []).length ? ["Cenários:", ...(s.cenarios || []).map((c) => `- ${c.id}: ${c.nome}`)] : ["Cenários: nenhum cadastrado (deixe cenario vazio e descreva o lugar em acao_en)."],
@@ -347,9 +376,11 @@
   function pedidoFichas(e, serieId) {
     const { itens, evitar } = fichasPendentes(e, serieId);
     return [
-      "Escreva, em inglês, uma ficha visual curta (até 45 palavras) para cada item, para um gerador de imagens.",
-      "Só o que se vê e não muda: idade aparente, corpo, rosto, cabelo, roupa e acessórios fixos (personagem) ou arquitetura, materiais, luz e época (cenário).",
-      "Sem nomes de pessoas reais famosas, sem personalidade abstrata, sem a palavra 'manhwa'. Use o mesmo texto sempre: é a âncora da continuidade.",
+      "Escreva, em inglês, o token visual (english_prompt_token) de cada item, para geradores de imagem (Midjourney, Flux, Leonardo, Kling).",
+      "Não é tradução literal: use tags técnicas de ilustração manhwa/webtoon, separadas por vírgula, até 60 palavras.",
+      "Personagens, nesta ordem: gênero e idade aparente, porte físico, tom de pele, cabelo e barba detalhados, cor e expressão dos olhos, marcas ou cicatrizes, vestimentas detalhadas com texturas e cores.",
+      "Cenários: lugar, arquitetura ou relevo, materiais, época, luz e clima.",
+      "Nunca use nomes próprios (o gerador não sabe quem é a pessoa), nem personalidade abstrata, nem estilo de desenho (o estilo vem no fim do prompt). O texto é a âncora da continuidade: o mesmo em todo quadro.",
       ...itens.map((it) => `- id ${it.id} (${it.tipo} ${it.nome}): ${it.texto}`),
       evitar ? `Traduza também a lista do que evitar nas imagens (campo evitar_en): ${evitar}` : "Campo evitar_en: devolva vazio.",
     ].join("\n");
@@ -403,7 +434,7 @@
 
   const Roteiro = {
     META_PADRAO, ESTILO_PADRAO, idCapitulo, hashTexto, palavras, montarPrompt, formatoDo, pedidoHistoria, pedidoQuadros,
-    pedidoFichas, pedidoArco, fichasPendentes, fichaEmDia, baseFicha,
+    pedidoFichas, pedidoArco, fichasPendentes, fichaEmDia, baseFicha, montarNegativo,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = Roteiro;
   else raiz.Roteiro = Roteiro;

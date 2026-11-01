@@ -267,6 +267,8 @@ textarea.mg-historia { min-height: 380px; line-height: 1.55; font-weight: 500; }
 .mg-item { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; border: 1px solid var(--linha); border-radius: 16px; padding: 4px 16px 14px; margin: 0; min-width: 0; }
 .mg-item .mg-btn { justify-self: start; margin-top: 10px; }
 .mg-curto { max-width: 140px; }
+textarea.mg-token { min-height: 74px; font: 500 12.5px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.mg-quadro .mg-trecho { margin: 8px 0 4px; font-size: 14px; font-style: normal; }
 textarea.mg-arco { min-height: 260px; font: 500 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
 .mg-detalhes summary.mg-h2 { font-size: 17px; color: var(--tinta); }
 .mg-recaptcha { font-size: 12px; }

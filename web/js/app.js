@@ -1429,6 +1429,9 @@ const FORMULARIOS = {
    pausa; os prompts são montados pelo js/roteiro.js com a ficha fixa de cada personagem. */
 
 const ESPERA_DIGITACAO_MS = 4000;
+/** Tempo de um bloco no vídeo (0 vira 0:00, não "—"). */
+const fmtTempo = (seg) => `${Math.floor(seg / 60)}:${String(Math.round(seg) % 60).padStart(2, "0")}`;
+const linhaEmCena = (cap) => (cap.em_cena.length ? `Em cena: ${cap.em_cena.map((n) => esc(n)).join(", ")}` : "");
 
 function abasProducao(aba) {
   const botoes = [["linha", "Linha de produção", "#producao"], ["roteiro", "Roteiro com IA", "#producao/roteiro"]]
@@ -1531,12 +1534,17 @@ function boxHistoria(d) {
     <form class="mg-card mg-in" data-form="historia" novalidate>
       <h2 class="mg-h2">História · capítulo ${cap.n} de ${s.meta}</h2>
       ${batida}
+      <p class="mg-sub" data-em-cena>${linhaEmCena(cap)}</p>
       <div class="mg-campo"><label for="h-ideia">Direção para a IA (opcional)</label>
         <input class="mg-input" id="h-ideia" name="ideia" maxlength="600" value="${esc(cap.ideia)}" placeholder="Ex.: mais tensão; terminar com Golias rindo do exército"></div>
       <div class="mg-acoes mg-mt"><button type="button" class="mg-btn mg-pri" data-acao="escrever-ia"${d.ia ? "" : " disabled"}>${cap.historia ? "Reescrever com IA" : "Escrever com IA"}</button>
         <span class="mg-sub">A IA lê a bíblia, o plano e tudo o que já aconteceu.</span></div>
-      <div class="mg-campo"><label for="h-titulo">Título do capítulo</label>
-        <input class="mg-input" id="h-titulo" name="titulo" maxlength="80" value="${esc(cap.titulo)}"></div>
+      <div class="mg-g2">
+        <div class="mg-campo"><label for="h-titulo">Título (YouTube e TikTok)</label>
+          <input class="mg-input" id="h-titulo" name="titulo" maxlength="80" value="${esc(cap.titulo)}"></div>
+        <div class="mg-campo"><label for="h-referencia">Referência bíblica</label>
+          <input class="mg-input" id="h-referencia" name="referencia" maxlength="120" value="${esc(cap.referencia)}" placeholder="Ex.: Gênesis 1:1-5"></div>
+      </div>
       <div class="mg-campo"><label for="h-historia">Narração</label>
         <textarea class="mg-input mg-historia" id="h-historia" name="historia" maxlength="5000" data-historia aria-describedby="h-contagem">${esc(cap.historia)}</textarea>
         <p id="h-contagem" data-contagem>${contagem(cap.palavras, d.formato)}</p></div>
@@ -1570,31 +1578,46 @@ function painelQuadros(d) {
     ].join("");
     return `
       <li class="mg-quadro">
-        <div class="mg-entre"><p class="mg-forte">Quadro ${q.n}</p>
-          <button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-prompt" data-i="${i}">Copiar prompt</button></div>
-        <p class="mg-sub mg-trecho">“${esc(q.trecho)}”</p>
+        <div class="mg-entre"><p class="mg-forte">Bloco ${q.n} <span class="mg-sub">· ${fmtTempo(q.inicio)} a ${fmtTempo(q.fim)}</span></p>
+          <div class="mg-acoes"><button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-prompt" data-i="${i}">Copiar imagem</button>
+          ${q.movimento ? `<button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-movimento" data-i="${i}">Copiar movimento</button>` : ""}</div></div>
+        <p class="mg-trecho"><b>Narração:</b> “${esc(q.trecho)}”</p>
+        ${q.direcao || q.sfx ? `<p class="mg-sub">${q.direcao ? `<b>Entonação:</b> ${esc(q.direcao)}` : ""}${q.direcao && q.sfx ? " · " : ""}${q.sfx ? `<b>Som:</b> ${esc(q.sfx)}` : ""}</p>` : ""}
         <div class="mg-legenda">${chips}</div>
+        <p class="mg-lbl mg-mt">Prompt de imagem</p>
         <pre class="mg-prompt">${esc(q.prompt)}</pre>
+        ${q.movimento ? `<p class="mg-lbl mg-mt">Movimento (imagem para vídeo)</p><pre class="mg-prompt">${esc(q.movimento)}</pre>` : ""}
       </li>`;
   }).join("");
+  const negativo = cap.negativo && cap.quadros.length
+    ? `<div class="mg-bloco"><div class="mg-entre"><p class="mg-lbl">Evitar (negative prompt, vale para todos)</p>
+        <button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-negativo">Copiar</button></div><pre class="mg-prompt">${esc(cap.negativo)}</pre></div>`
+    : "";
   return `
-    <div class="mg-entre"><h2 class="mg-h2">Prompts dos quadros</h2>
-      ${cap.quadros.length ? '<button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-todos">Copiar todos</button>' : ""}</div>
-    <p class="mg-sub">Um prompt de imagem por quadro. Aparência e roupa vêm da bíblia, iguais em todos os capítulos.</p>
+    <div class="mg-entre"><h2 class="mg-h2">Cenas e prompts</h2>
+      ${cap.quadros.length ? '<button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-todos">Copiar tudo</button>' : ""}</div>
+    <p class="mg-sub">Blocos de 5 a 8 s: narração, entonação, som, prompt de imagem e de movimento. O token de cada personagem vem da bíblia, igual em todos os capítulos.</p>
     <div class="mg-acoes mg-mt">${situacao}${refazer}</div>
     ${pendentes}
+    ${negativo}
     <ol class="mg-quadros mg-mt">${quadros}</ol>`;
 }
 
 function linhaItem(tipo, item, i) {
   const pers = tipo === "personagens";
   const campos = pers
-    ? [["nome", "Nome", 60], ["aparencia", "Aparência (rosto, cabelo, corpo, idade)", 400], ["roupas", "Roupas e acessórios fixos", 400], ["personalidade", "Personalidade", 400]]
-    : [["nome", "Nome do lugar", 60], ["descricao", "Como é o lugar", 400]];
+    ? [["nome", "Nome do personagem", 60], ["aparencia", "Aparência física (PT)", 400], ["roupas", "Vestimentas e acessórios (PT)", 400], ["personalidade", "Personalidade", 400]]
+    : [["nome", "Nome do lugar", 60], ["descricao", "Como é o lugar (PT)", 400]];
   const id = `${tipo}-${i}`;
-  const ficha = item.ficha_en
-    ? `<p class="mg-sub mg-largura">${item.ficha_ok ? "No prompt" : "No prompt (vai ser atualizado ao salvar)"}: <i>${esc(item.ficha_en)}</i></p>`
-    : '<p class="mg-sub mg-largura">A ficha em inglês para o prompt é criada ao salvar.</p>';
+  const situacaoToken = item.ficha_ok
+    ? "Em dia com os campos em português."
+    : item.ficha_en
+      ? "Os campos em português mudaram: ao salvar, a IA refaz o token (ou ajuste aqui à mão)."
+      : "Ao salvar, a IA cria o token a partir dos campos em português.";
+  const ficha = `
+    <div class="mg-campo mg-largura-2"><label for="${id}-token">Token em inglês (entra no prompt no lugar do nome)</label>
+      <textarea class="mg-input mg-token" id="${id}-token" data-token data-original="${esc(item.ficha_en || "")}" maxlength="700" placeholder="english_prompt_token">${esc(item.ficha_en || "")}</textarea>
+      <p class="mg-sub">${situacaoToken}</p></div>`;
   return `
     <fieldset class="mg-item" data-item="${tipo}" data-id="${esc(item.id || "")}" data-ficha="${esc(item.ficha || "")}">
       <legend class="mg-oculto">${pers ? "Personagem" : "Cenário"} ${i + 1}</legend>
@@ -1682,6 +1705,8 @@ async function redesenharQuadros() {
     caixa.innerHTML = painelQuadros(d);
     aplicarEstilos(caixa);
   }
+  const emCena = tela.querySelector("[data-em-cena]");
+  if (emCena) emCena.innerHTML = linhaEmCena(d.cap);
 }
 
 /** Traduz para o inglês as fichas da bíblia que mudaram (uma chamada para todas). */
@@ -1719,6 +1744,7 @@ async function atualizarQuadros(historia) {
 function lerHistoria(form) {
   return {
     titulo: form.elements.titulo.value.trim(),
+    referencia: form.elements.referencia.value.trim(),
     historia: form.elements.historia.value.trim(),
     resumo: form.elements.resumo.value.trim(),
     ideia: form.elements.ideia.value.trim(),
@@ -1800,6 +1826,12 @@ function itensDaBiblia(form, tipo) {
   return [...form.querySelectorAll(`[data-item="${tipo}"]`)].map((fs) => {
     const item = { id: fs.dataset.id || undefined, ficha: fs.dataset.ficha || undefined };
     fs.querySelectorAll("[data-campo]").forEach((el) => { item[el.dataset.campo] = el.value.trim(); });
+    // token em inglês editado à mão: vale como está (a IA não reescreve por cima)
+    const token = fs.querySelector("[data-token]");
+    if (token && token.value.trim() && token.value.trim() !== token.dataset.original) {
+      item.ficha_en = token.value.trim();
+      item.ficha_manual = true;
+    }
     return item;
   }).filter((x) => x.nome);
 }
@@ -1836,7 +1868,7 @@ const escreverComIA = (b) => comOcupado(b, "Escrevendo…", async () => {
       ...(r.novos_personagens || []).map((x) => ({ ...x, tipo: "personagem" })),
       ...(r.novos_cenarios || []).map((x) => ({ ...x, tipo: "cenario" })),
     ].filter((x) => x.nome && !nomes.has(String(x.nome).toLowerCase())).slice(0, 6);
-    await enviar(`/api/capitulos/${encodeURIComponent(s.id)}/${c.n}`, { titulo: r.titulo || "", historia: r.historia || "", resumo: r.resumo || "", ideia });
+    await enviar(`/api/capitulos/${encodeURIComponent(s.id)}/${c.n}`, { titulo: r.titulo || "", referencia: r.referencia || "", historia: r.historia || "", resumo: r.resumo || "", ideia });
     estado.formSujo = false;
     await navegar(false);
     estado.roteiro.ocupado = null;
@@ -1855,8 +1887,24 @@ Object.assign(ACOES, {
     const q = capAtual().quadros[Number(b.dataset.i)];
     await copiarTexto(b, q ? q.prompt : "");
   },
+  "copiar-movimento": async (b) => {
+    const q = capAtual().quadros[Number(b.dataset.i)];
+    await copiarTexto(b, q ? q.movimento : "");
+  },
+  "copiar-negativo": async (b) => {
+    await copiarTexto(b, capAtual().negativo || "");
+  },
   "copiar-todos": async (b) => {
-    await copiarTexto(b, capAtual().quadros.map((q) => `Quadro ${q.n}\n${q.prompt}`).join("\n\n"));
+    const c = capAtual();
+    const cabeca = [`${c.titulo || `Capítulo ${c.n}`}${c.referencia ? ` (${c.referencia})` : ""}`, c.negativo ? `Evitar (negative prompt): ${c.negativo}` : ""].filter(Boolean).join("\n");
+    const blocos = c.quadros.map((q) => [
+      `BLOCO ${q.n} (${fmtTempo(q.inicio)} a ${fmtTempo(q.fim)})`,
+      `Narração: ${q.direcao ? `${q.direcao} ` : ""}${q.trecho}`,
+      q.sfx ? `Som: ${q.sfx}` : "",
+      `Imagem: ${q.prompt}`,
+      q.movimento ? `Movimento: ${q.movimento}` : "",
+    ].filter(Boolean).join("\n"));
+    await copiarTexto(b, [cabeca, ...blocos].join("\n\n"));
   },
   "aceitar-sugestao": (b) => comOcupado(b, "Adicionando…", async () => {
     const x = estado.roteiro.sugestoes[Number(b.dataset.i)];
@@ -1892,7 +1940,10 @@ Object.assign(ACOES, {
   "capitulo-para-fila": () => {
     const s = serieAtual();
     const c = capAtual();
-    estado.prefill = { canal: s.canal.id, titulo: `${c.titulo || `Capítulo ${c.n}`}`.slice(0, 120), serie: s.nome, descricao: c.resumo || "" };
+    estado.prefill = {
+      canal: s.canal.id, titulo: `${c.titulo || `Capítulo ${c.n}`}`.slice(0, 120), serie: s.nome,
+      descricao: [c.resumo, c.referencia ? `(${c.referencia})` : ""].filter(Boolean).join(" "),
+    };
     location.hash = "#producao";
   },
 });
