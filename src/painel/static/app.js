@@ -117,6 +117,10 @@ function aplicarEstilos(raiz) {
 /* ------------------------------------------------------------------ API */
 
 async function api(caminho, opcoes = {}) {
+  /* no GitHub Pages os dados vêm do Firebase (ou do exemplo), não de /api */
+  if (window.FONTE) {
+    return opcoes.metodo === "POST" ? window.FONTE.post(caminho, opcoes.corpo ?? {}) : window.FONTE.get(caminho);
+  }
   const cabecalhos = { "X-Estudio": "1" };
   if (opcoes.corpo !== undefined) cabecalhos["Content-Type"] = "application/json";
   let resposta;
@@ -607,9 +611,11 @@ function abasPlataformas(aba, contagens) {
 
 function cartaoPublicar(v, i) {
   const quando = v.horario ? `Agendado para ${fmtHorario(v.horario)}` : "Sem horário";
-  const baixar = v.tem_arquivo
-    ? `<a class="mg-btn mg-pri" href="/api/videos/${encodeURIComponent(v.id)}/arquivo" download>Baixar vídeo</a>`
-    : chip("at", "MP4 não está neste aparelho");
+  const urlOnline = window.FONTE ? window.FONTE.baixar(v) : "";
+  let baixar = chip("at", "MP4 não está neste aparelho");
+  if (urlOnline) baixar = `<a class="mg-btn mg-pri" href="${esc(urlOnline)}" target="_blank" rel="noopener noreferrer">Baixar vídeo</a>`;
+  else if (window.FONTE) baixar = chip("at", "Vídeo ainda não foi para o Drive");
+  else if (v.tem_arquivo) baixar = `<a class="mg-btn mg-pri" href="/api/videos/${encodeURIComponent(v.id)}/arquivo" download>Baixar vídeo</a>`;
   const total = v.plataformas.length;
   return `
     <article class="mg-card mg-in" data-id="${esc(v.id)}" data-atraso="${60 + i * 40}">
@@ -807,10 +813,13 @@ function pecaGatilho(conds, titulo = "Gatilho do próximo canal") {
 
 function cartaoVideo(v, i) {
   const testes = v.testes.map((t) => `<li class="mg-chip ${CLASSE[t.status] || "mg-c-ne"}" title="${esc(t.detalhe)}">${ICONE[t.status] || ""}${esc(t.nome)}</li>`).join("");
-  const previa = v.tem_previa
-    ? `<video controls preload="none" playsinline src="/api/videos/${encodeURIComponent(v.id)}/previa" data-video="${esc(v.id)}" aria-label="Prévia de ${esc(v.titulo)}"></video>`
-    : '<span class="mg-sem-previa">Sem prévia neste computador</span>';
-  const janela = v.janela && !v.tem_previa
+  const online = window.FONTE ? window.FONTE.previa(v) : "";
+  const temPrevia = window.FONTE ? Boolean(online) : v.tem_previa;
+  let previa = '<span class="mg-sem-previa">Sem prévia neste computador</span>';
+  if (online) previa = online;
+  else if (window.FONTE) previa = `<span class="mg-sem-previa">${esc(window.FONTE.semPrevia)}</span>`;
+  else if (v.tem_previa) previa = `<video controls preload="none" playsinline src="/api/videos/${encodeURIComponent(v.id)}/previa" data-video="${esc(v.id)}" aria-label="Prévia de ${esc(v.titulo)}"></video>`;
+  const janela = v.janela && !temPrevia
     ? `<div class="mg-janela"><b>${esc(ROTULO_JANELA[v.janela.tipo] || v.janela.tipo)}</b><span>${esc(v.janela.titulo)} (${esc(v.janela.referencia)})</span></div>`
     : "";
   const falhas = v.testes.filter((t) => t.status === "cr").map((t) => `${esc(t.nome)}${t.detalhe ? `: ${esc(t.detalhe)}` : ""}`).join("; ");
@@ -1171,6 +1180,10 @@ document.getElementById("atualizar").addEventListener("click", async (ev) => {
 });
 
 document.getElementById("sair").addEventListener("click", async () => {
+  if (window.FONTE) {
+    await window.FONTE.sair();
+    return;
+  }
   try {
     await enviar("/logout");
   } finally {
@@ -1185,10 +1198,15 @@ setInterval(() => {
   if (document.visibilityState !== "visible") return;
   recarregarCabecalho();
   const tocando = [...tela.querySelectorAll("video")].some((v) => !v.paused);
-  const ocupado = estado.formSujo || estado.refazendo || tocando || document.activeElement?.closest("form");
+  const ocupado = estado.formSujo || estado.refazendo || tocando || document.activeElement?.closest("form")
+    || document.activeElement?.tagName === "IFRAME";
   if (!ocupado && ["inicio", "producao", "saude"].includes(estado.rota)) navegar(false);
 }, 60_000);
 
-navegar().then(() => {
-  if (estado.rota !== "inicio") recarregarCabecalho();
+/* painel online (GitHub Pages): a fonte decide se mostra o login antes das telas */
+(window.FONTE ? window.FONTE.iniciar(tela) : Promise.resolve(true)).then((pronto) => {
+  if (!pronto) return;
+  navegar().then(() => {
+    if (estado.rota !== "inicio") recarregarCabecalho();
+  });
 });

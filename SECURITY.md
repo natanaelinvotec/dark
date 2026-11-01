@@ -6,6 +6,7 @@
 3. **O banco** (`dados/estudio.db`): fila, custos, receitas, auditoria.
 
 ## Regras do projeto
+- **Painel online (GitHub Pages + Firebase):** o site é público, os dados não. Só o e-mail do dono (verificado pelo Google) lê `telas/` e cria `comandos/`; ninguém altera ou apaga comandos pelo navegador (regras em `estudio nuvem regras`). A ponte no PC usa a conta de serviço (`dados/firebase-servico.json`, nunca no Git), aceita só as rotas de escrita do painel (lista fechada em `nuvem.py`) e executa cada uma pelas mesmas validações da API local. O Drive usa o escopo `drive.file` (o app só enxerga o que ele criou); as prévias têm link não listado.
 - Painel escuta em `127.0.0.1` por padrão e **nunca** abre porta no roteador. Acesso remoto por um destes caminhos:
   - **Cloudflare Tunnel + Cloudflare Access** (`online.bat`): o túnel sai do PC para a Cloudflare; o Access exige código no e-mail do dono **antes** de qualquer requisição chegar ao painel. Crie a aplicação do Access **antes** da rota do túnel e ligue "Protect with Access". Com isso, `ESTUDIO_COOKIE_SEGURO=1`.
   - **Tailscale** (`tailscale serve --bg http://127.0.0.1:8787`): só aparelhos da sua conta.

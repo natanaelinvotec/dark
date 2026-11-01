@@ -10,7 +10,8 @@
 4. Publicação v1 = **pacote de agendamento** (pasta do dia + CSV) + **publicação assistida** na tela Plataformas: o painel baixa o MP4, copia a legenda no formato de cada rede e abre a página oficial de envio; o dono sobe e cola o link. APIs de publicação só depois de auditoria/aprovação de cada plataforma.
 5. Quadros do canal bíblico e ganchos animados são **feitos à mão** (assinatura Google AI Pro, sem API); o pipeline prepara os prompts e espera os arquivos.
 6. Duração-alvo **61–80 s**: rende em todas as redes (TikTok ≥ 60 s; Reels pela API ≤ 90 s; Spotlight ≥ 30 s).
-7. Roda no **PC do dono** (ligado com `iniciar.bat`); qualquer navegador acessa pelo endereço online (`online.bat`) enquanto o PC estiver ligado.
+7. Roda no **PC do dono** (ligado com `iniciar.bat`).
+8. **Painel online** em `https://natanaelinvotec.github.io/dark/` (GitHub Pages, montado pelo Actions): mesmas telas; login Google; dados no Firestore (`telas/` publicadas pela ponte do PC, `comandos/` criados pelo painel e executados pelo PC com as mesmas rotas da API); prévias no Google Drive (`drive.file`). Sem Firebase configurado, abre em modo demonstração. Isto revisa a premissa 3 só para o espelho das telas: o estado de verdade continua no SQLite do PC.
 
 ## Mapa de módulos
 

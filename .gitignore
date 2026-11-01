@@ -5,11 +5,18 @@
 tokens/
 *.pem
 *.key
+# chaves do Firebase e do Google (devem ficar em dados/, mas por garantia)
+*firebase-servico*.json
+*google-oauth*.json
+*google-token*.json
+client_secret*.json
+*-firebase-adminsdk-*.json
 
 # Dados locais e saídas
 dados/
 saida/
 work/
+_site/
 *.db
 *.db-*
 *.mp4

@@ -59,6 +59,11 @@ class Config:
     teto_mes_brl: float = 150.0
     cambio_usd_brl: float = 5.2
     plataformas_arquivo: Path = RAIZ / "plataformas.yaml"
+    # painel online (GitHub Pages + Firebase) e prévias no Google Drive
+    firebase_credenciais: Path = RAIZ / "dados" / "firebase-servico.json"
+    google_oauth_cliente: Path = RAIZ / "dados" / "google-oauth.json"
+    google_token: Path = RAIZ / "dados" / "google-token.json"
+    dono_email: str = ""
 
     def chaves_configuradas(self) -> dict[str, bool]:
         """Só diz se cada chave existe. Nunca devolve o valor."""
@@ -111,6 +116,14 @@ def carregar_config(env: Mapping[str, str] | None = None, raiz: Path = RAIZ) -> 
         plataformas_arquivo=_caminho(
             env.get("ESTUDIO_PLATAFORMAS", "plataformas.yaml"), raiz
         ),
+        firebase_credenciais=_caminho(
+            env.get("FIREBASE_CREDENCIAIS", "dados/firebase-servico.json"), raiz
+        ),
+        google_oauth_cliente=_caminho(
+            env.get("GOOGLE_OAUTH_CLIENTE", "dados/google-oauth.json"), raiz
+        ),
+        google_token=_caminho(env.get("GOOGLE_TOKEN", "dados/google-token.json"), raiz),
+        dono_email=env.get("DONO_EMAIL", "").strip().lower(),
     )
 
 

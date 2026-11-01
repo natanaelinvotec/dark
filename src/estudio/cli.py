@@ -259,6 +259,43 @@ def cmd_pacote(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_nuvem(args: argparse.Namespace) -> int:
+    from estudio import nuvem
+
+    cfg = carregar_config()
+    if args.acao == "regras":
+        email = args.email or cfg.dono_email
+        if not email:
+            print("Informe o e-mail: uv run estudio nuvem regras --email voce@gmail.com",
+                  file=sys.stderr)
+            return 1
+        print(nuvem.regras_firestore(email))
+        return 0
+    try:
+        if args.acao == "drive-login":
+            nuvem.login_drive(cfg.google_oauth_cliente, cfg.google_token)
+            print("Drive autorizado. As prévias vão para a pasta "
+                  f"'{nuvem.PASTA_DRIVE}' do seu Drive.")
+            return 0
+        _, canais, con = _abrir()
+        con.close()
+        nuvem.rodar_ponte(cfg, canais, intervalo=args.intervalo)
+    except RuntimeError as erro:
+        print(str(erro), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 0
+    return 0
+
+
+def cmd_site(args: argparse.Namespace) -> int:
+    from estudio.nuvem import construir_site
+
+    pasta = construir_site(Path(args.saida))
+    print(f"Site do painel em {pasta}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(prog="estudio", description="Estúdio de Canais")
@@ -297,6 +334,16 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--serie", default="")
     g.add_argument("--referencia", default="")
     g.set_defaults(func=cmd_gerar)
+
+    n = sub.add_parser("nuvem", help="painel online: ponte com o Firebase e o Google Drive")
+    n.add_argument("acao", choices=["rodar", "drive-login", "regras"])
+    n.add_argument("--email", help="e-mail do dono (para 'regras')")
+    n.add_argument("--intervalo", type=float, default=60)
+    n.set_defaults(func=cmd_nuvem)
+
+    s = sub.add_parser("site", help="monta o site do painel para o GitHub Pages")
+    s.add_argument("--saida", default="_site")
+    s.set_defaults(func=cmd_site)
 
     k = sub.add_parser("pacote", help="monta o pacote de agendamento de um dia")
     k.add_argument("--data", help="AAAA-MM-DD (padrão: hoje)")

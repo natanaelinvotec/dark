@@ -85,7 +85,42 @@ e o Reels pela API vai até 90 s). Cada canal lista onde publica em `plataformas
 - O painel **nunca pede nem guarda senha** das plataformas. As regras ficam em `plataformas.yaml`,
   com a data em que foram conferidas; o painel avisa quando passarem de 90 dias.
 
-## Abrir o painel pelo GitHub (Codespaces) — o jeito mais simples
+## Painel online: https://natanaelinvotec.github.io/dark/
+
+Igual ao provador: um site no GitHub Pages que abre em qualquer navegador. Os dados ficam no
+**Firebase** (projeto só dos canais, plano grátis) e as prévias dos vídeos no seu **Google Drive**.
+A fábrica continua no PC: o `iniciar.bat` liga também a **ponte** (`estudio nuvem rodar`), que
+publica as telas no Firebase, executa em segundos o que você aprovar online e sobe cada vídeo
+pronto para a pasta "Estúdio de Canais - prévias" do Drive. Com o PC desligado, o painel abre
+com os últimos dados e guarda as suas decisões até ele ligar.
+
+Antes de ligar o Firebase o link abre em **modo demonstração** (dados de exemplo, nada é salvo).
+O site é montado e publicado sozinho pelo GitHub Actions a cada `enviar-github.bat`.
+
+**Ligar com os seus dados (uma vez, uns 15 minutos):**
+
+1. **Projeto:** console.firebase.google.com → *Adicionar projeto* → `estudio-canais` → sem Analytics.
+2. **Login:** *Authentication* → *Vamos começar* → **Google** → Ativar. Em *Configurações › Domínios
+   autorizados* → adicione `natanaelinvotec.github.io`.
+3. **Banco:** *Firestore Database* → *Criar banco* → `southamerica-east1` (São Paulo) → modo de
+   produção. Na aba **Regras**, cole o que este comando mostrar e clique em *Publicar*:
+   `uv run estudio nuvem regras --email seu-email@gmail.com`
+4. **Site:** *Configurações do projeto* → *Seus apps* → **Web** (`</>`) → apelido `painel`. Copie
+   `apiKey`, `authDomain`, `projectId` e `appId` para `site/config.js` e ponha o seu e-mail em `dono`.
+5. **Chave do PC:** *Configurações do projeto* → *Contas de serviço* → *Gerar nova chave privada* →
+   salve como `dados\firebase-servico.json`. É segredo: fica só no PC (o `.gitignore` bloqueia).
+6. **Drive:** em console.cloud.google.com, no mesmo projeto: *APIs e serviços › Biblioteca* →
+   **Google Drive API** → Ativar. *Tela de permissão OAuth* → Externo → nome `Estúdio` → seu e-mail
+   → *Publicar app*. *Credenciais* → *Criar credenciais* → *ID do cliente OAuth* → **App para
+   computador** → baixe o JSON e salve como `dados\google-oauth.json`.
+7. **No PC:** ponha `DONO_EMAIL=seu-email@gmail.com` no `.env` e rode
+   `uv run estudio nuvem drive-login` (autoriza no navegador; o app só enxerga os arquivos que ele
+   mesmo cria). Depois `enviar-github.bat` e `iniciar.bat`.
+
+Pronto: entre no link com a sua conta Google. As prévias tocam do Drive (link não listado: só quem
+tem o link acha). O plano grátis do Firestore sobra: a ponte só regrava uma tela quando ela muda.
+
+## Abrir o painel pelo GitHub (Codespaces) — alternativa sem Firebase
 
 O GitHub guarda o código; quem **roda** o painel é o **Codespaces**, um computador na nuvem do
 próprio GitHub. O painel abre num link `https://…-8787.app.github.dev`, só para você (pede o seu

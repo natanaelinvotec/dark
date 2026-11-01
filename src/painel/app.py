@@ -88,7 +88,10 @@ def criar_app(
     canais: dict[str, Canal] | None = None,
     exigir_segredos: bool = True,
     registro: Registro | None = None,
+    autenticar: bool = True,
 ) -> FastAPI:
+    """`autenticar=False` só para uso dentro do próprio processo (ponte com a nuvem e geração do
+    site): o app não escuta em rede nenhuma e as rotas continuam validando tudo."""
     cfg = cfg or carregar_config()
     canais = canais if canais is not None else carregar_canais(cfg.canais_dir)
     registro = registro or carregar_plataformas(cfg.plataformas_arquivo)
@@ -141,7 +144,7 @@ def criar_app(
             con.close()
 
     def sessao(request: Request) -> None:
-        if not request.session.get("ok"):
+        if autenticar and not request.session.get("ok"):
             raise HTTPException(status_code=401, detail="faça login")
 
     def anti_csrf(request: Request) -> None:

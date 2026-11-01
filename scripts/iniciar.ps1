@@ -35,7 +35,14 @@ $painel = Start-Process uv -ArgumentList "run", "estudio", "painel" -WindowStyle
     -RedirectStandardOutput "$logs\painel.log" -RedirectStandardError "$logs\painel-erros.log"
 $worker = Start-Process uv -ArgumentList "run", "estudio", "worker" -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput "$logs\worker.log" -RedirectStandardError "$logs\worker-erros.log"
-Set-Content $pids "$($painel.Id) $($worker.Id)"
+$ids = "$($painel.Id) $($worker.Id)"
+# painel online (GitHub Pages): a ponte com o Firebase sobe se a chave da conta de serviço existir
+if (Test-Path "dados\firebase-servico.json") {
+    $ponte = Start-Process uv -ArgumentList "run", "estudio", "nuvem", "rodar" -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput "$logs\nuvem.log" -RedirectStandardError "$logs\nuvem-erros.log"
+    $ids = "$ids $($ponte.Id)"
+}
+Set-Content $pids $ids
 
 Start-Sleep -Seconds 5
 if ($painel.HasExited) {

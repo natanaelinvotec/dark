@@ -155,6 +155,12 @@ CREATE TABLE IF NOT EXISTS contas (
     atualizado_em TEXT NOT NULL,
     PRIMARY KEY (canal_id, plataforma)
 );
+CREATE TABLE IF NOT EXISTS nuvem_arquivos (
+    video_id TEXT PRIMARY KEY,
+    drive_id TEXT NOT NULL,
+    assinatura TEXT NOT NULL,
+    enviado_em TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS publicacoes (
     video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
     plataforma TEXT NOT NULL,

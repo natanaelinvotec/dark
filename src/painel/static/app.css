@@ -129,6 +129,10 @@ a:hover { color: var(--teal); }
 .mg-video { display: flex; gap: 18px; }
 .mg-prev { flex: none; position: relative; width: 150px; aspect-ratio: 9 / 16; border-radius: 16px; overflow: hidden; background: #14244A; display: flex; align-items: center; justify-content: center; }
 .mg-prev video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+.mg-prev iframe { width: 100%; height: 100%; border: 0; background: #000; }
+/* login do painel online (GitHub Pages) */
+.mg-entrar { max-width: 420px; margin: 8vh auto 0; text-align: center; padding: 32px 24px; }
+.mg-entrar .mg-btn { margin-top: 18px; }
 .mg-prev .mg-tempo { position: absolute; left: 10px; bottom: 10px; background: rgba(10, 22, 48, .78); color: #fff; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
 .mg-sem-previa { color: rgba(255, 255, 255, .8); font-size: 12px; font-weight: 700; text-align: center; padding: 10px; }
 .mg-janela { position: absolute; left: 10px; right: 10px; top: 20px; background: rgba(26, 20, 8, .92); border: 1.5px solid #E9C46A; border-radius: 8px; padding: 6px 8px; text-align: center; }

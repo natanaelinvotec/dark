@@ -65,6 +65,13 @@ def test_sem_sessao_401_e_sem_cabecalho_403(cliente):
     assert cliente.post("/login", json={"senha": SENHA}).status_code == 403
 
 
+def test_sem_autenticacao_so_para_uso_interno_e_ainda_pede_cabecalho(cfg, canais, con):
+    interno = TestClient(criar_app(cfg, canais, exigir_segredos=False, autenticar=False))
+    assert interno.get("/api/resumo").status_code == 200
+    assert interno.post("/api/lotes", json={"canal": "curiosidades", "tema": "abc", "qtd": 1}
+                        ).status_code == 403
+
+
 def test_login_errado_e_limite_de_tentativas(cliente):
     for _ in range(10):
         assert cliente.post("/login", json={"senha": "errada"}, headers=H).status_code == 401
