@@ -18,7 +18,7 @@
 ## Canal no ar
 - [x] 01/11 · YouTube: o canal "Kungamble" virou **Selah Studios** (@selahstudiosoficial): nome, @, descrição, foto e banner (fermata dourada), país Brasil, palavras-chave, "não é para crianças". Arte em `outputs/selah/` (marca.html gera os PNG).
 - [x] 01/11 · Painel: canal "Selah Studios" criado a partir do modelo Bíblico e conta do YouTube registrada em Plataformas › Contas.
-- [ ] Você: apagar as 11 playlists antigas no Studio (exclusão definitiva fica com você).
+- [x] 01/11 · Canal limpo do zero: vídeos e playlists antigos apagados por você.
 - [ ] Produção › Roteiro com IA › Nova série (canal Selah Studios), planejar o arco e escrever o capítulo 1.
 - [ ] Para testar com outra pessoa: Mais › Plataforma › convidados → o e-mail dela.
 
