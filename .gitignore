@@ -7,9 +7,10 @@
 *service-account*.json
 client_secret*.json
 
-# Dados locais da versão antiga (ficam só no seu PC)
-dados/
-Estudio/
+# Dados locais da versão antiga (ficam só no seu PC). A barra no começo vale só para a raiz:
+# sem ela, "dados/" escondia também web/dados/ (canais e plataformas do painel).
+/dados/
+/Estudio/
 *.db
 *.db-*
 *.mp4

@@ -1,0 +1,139 @@
+[
+  {
+    "slug": "biblico-manhwa",
+    "nome": "Bíblico",
+    "cor": "#2563C9",
+    "enabled": true,
+    "idioma": "pt-BR",
+    "descricao": "Histórias bíblicas em manhwa com janelas de missão",
+    "pasta": "Canal-Biblico",
+    "horarios": [
+      "12:00",
+      "19:00"
+    ],
+    "plataformas": [
+      "youtube",
+      "tiktok",
+      "facebook",
+      "instagram",
+      "kwai",
+      "snapchat"
+    ],
+    "formato": {
+      "short_segundos": [
+        61,
+        80
+      ],
+      "tiktok_segundos": [
+        61,
+        80
+      ],
+      "palavras_min": 150,
+      "palavras_max": 190,
+      "cenas_min": 9,
+      "cenas_max": 13,
+      "janelas_min": 1,
+      "janelas_max": 2
+    },
+    "producao": {
+      "quadros": "manual",
+      "gancho": "manual",
+      "voz": "tts"
+    },
+    "roteiro": {
+      "instrucoes": "Narre com palavras próprias, fiel ao texto bíblico, sem inventar falas. O \"Sistema\" é um recurso do narrador e nunca fala por Deus. Toda janela de missão traz a referência (livro capítulo:versículo). Termine com um gancho para o próximo episódio.\n"
+    },
+    "estilo_visual": {
+      "prompt_base": "vertical 9:16 webtoon panel, Korean manhwa art style, clean line art, cel shading, dramatic lighting, ancient Middle East setting (Iron Age Israel), historically plausible clothing, no text, no logos, no watermark\n",
+      "evitar": [
+        "texto na imagem",
+        "rosto realista de figuras sagradas",
+        "armaduras medievais europeias"
+      ]
+    },
+    "personagens": [
+      {
+        "id": "davi",
+        "ficha": "Personagens/davi_ficha.png",
+        "descricao": "jovem pastor (1 Sm 17:42 o descreve como moço e ruivo), cabelo ruivo ondulado, túnica bege simples, funda de couro no cinto"
+      },
+      {
+        "id": "golias",
+        "ficha": "Personagens/golias_ficha.png",
+        "descricao": "guerreiro filisteu de Gate, couraça de escamas e elmo de bronze, lança enorme (1 Sm 17:4-7)"
+      },
+      {
+        "id": "saul",
+        "ficha": "Personagens/saul_ficha.png",
+        "descricao": "rei mais alto que todo o povo (1 Sm 9:2), barba escura, manto real escuro, coroa simples de bronze"
+      }
+    ],
+    "janela_de_missao": {
+      "tema": "pergaminho de luz",
+      "cores": {
+        "fundo": "#1A1408",
+        "borda": "#E9C46A",
+        "titulo": "#FFE8A3",
+        "texto": "#F5ECD7",
+        "destaque": "#7FD1AE"
+      },
+      "fonte_titulo": "Cinzel.ttf",
+      "fonte_texto": "Nunito.ttf"
+    },
+    "sistema": null
+  },
+  {
+    "slug": "curiosidades",
+    "nome": "Curiosidades",
+    "cor": "#0E9A82",
+    "enabled": true,
+    "idioma": "pt-BR",
+    "descricao": "Ciência, espaço e história em pouco mais de 1 minuto",
+    "pasta": "Canal-Curiosidades",
+    "horarios": [
+      "12:00",
+      "18:30"
+    ],
+    "plataformas": [
+      "youtube",
+      "tiktok",
+      "facebook",
+      "instagram",
+      "kwai",
+      "snapchat"
+    ],
+    "formato": {
+      "short_segundos": [
+        61,
+        80
+      ],
+      "tiktok_segundos": [
+        61,
+        80
+      ],
+      "palavras_min": 150,
+      "palavras_max": 195,
+      "cenas_min": 10,
+      "cenas_max": 16,
+      "janelas_min": 0,
+      "janelas_max": 0
+    },
+    "producao": {
+      "quadros": "banco",
+      "gancho": "nenhum",
+      "voz": "tts"
+    },
+    "busca_visual_padrao": "night sky stars",
+    "roteiro": {
+      "instrucoes": "Fatos verificáveis, com pelo menos duas fontes confiáveis. Varie o formato (lista, mito ou verdade, pergunta e resposta, história). Cada cena traz um termo de busca visual em inglês, concreto e fotografável.\n"
+    },
+    "estilo_visual": {
+      "prompt_base": "",
+      "evitar": [
+        "pessoas reconhecíveis",
+        "logotipos"
+      ]
+    },
+    "sistema": null
+  }
+]
