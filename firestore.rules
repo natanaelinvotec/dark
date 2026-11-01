@@ -1,26 +1,74 @@
 rules_version = '2';
-
-// Só o dono (conta Google com e-mail verificado) lê e grava. Troque o e-mail aqui E em
-// web/config.js se for outra conta. Publicar: firebase deploy --only firestore:rules
+// Plataforma multi-estúdio: cada conta Google tem o próprio estúdio em estudios/{uid}/...
+// e só ela lê e grava ali. O dono da plataforma (o mesmo e-mail de web/config.js > admin)
+// abre/fecha o cadastro e pode pausar um estúdio, mas não lê os dados de dentro dele.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function dono() {
-      return request.auth != null
-        && request.auth.token.email == 'natanael.invotec@gmail.com'
-        && request.auth.token.email_verified == true;
+
+    function logado() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function email() {
+      return request.auth.token.email.lower();
+    }
+    function admin() {
+      return logado() && email() == 'natanael.invotec@gmail.com';
+    }
+    function dono(uid) {
+      return logado() && request.auth.uid == uid;
+    }
+    function caminhoAcesso() {
+      return /databases/$(database)/documents/plataforma/acesso;
+    }
+    // cadastro: o dono da plataforma sempre entra; os outros, se estiver aberto ou se forem convidados
+    function liberado() {
+      return admin() || (exists(caminhoAcesso()) && (get(caminhoAcesso()).data.aberto == true
+        || email() in get(caminhoAcesso()).data.convidados));
+    }
+    function ativo(uid) {
+      return get(/databases/$(database)/documents/estudios/$(uid)).data.ativo == true;
     }
 
-    // auditoria: só cria e lê; ninguém edita nem apaga pelo navegador
-    match /acoes/{id} {
-      allow read, create: if dono();
-    }
-    match /eventos/{id} {
-      allow read, create: if dono();
+    // a lista de convidados é privada: as regras consultam com get(), o site não precisa ler
+    match /plataforma/acesso {
+      allow read: if admin();
+      allow write: if admin()
+        && request.resource.data.keys().hasOnly(['aberto', 'convidados', 'atualizadoEm'])
+        && request.resource.data.aberto is bool
+        && request.resource.data.convidados is list
+        && request.resource.data.convidados.size() <= 200;
     }
 
-    match /{colecao}/{id} {
-      allow read, write: if dono()
-        && colecao in ['videos', 'contas', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+    match /estudios/{uid} {
+      allow read: if dono(uid) || admin();
+      // primeiro acesso: nasce ativo, com o e-mail da própria conta
+      allow create: if dono(uid) && liberado()
+        && request.resource.data.keys().hasOnly(['email', 'nome', 'ativo', 'criadoEm', 'versaoDados'])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.ativo == true
+        && request.resource.data.nome is string && request.resource.data.nome.size() <= 80
+        && request.resource.data.criadoEm is string
+        && request.resource.data.versaoDados is int;
+      // o usuário só muda o nome e a versão dos dados; o dono da plataforma só mexe em "ativo"
+      allow update: if (dono(uid) && ativo(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'versaoDados'])
+          && request.resource.data.nome is string && request.resource.data.nome.size() <= 80
+          && request.resource.data.versaoDados is int)
+        || (admin() && request.auth.uid != uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ativo'])
+          && request.resource.data.ativo is bool);
+      allow delete: if false;
+
+      // dados do estúdio: só o dono, e só enquanto o estúdio estiver ativo
+      match /{colecao}/{id} {
+        allow read: if dono(uid) && ativo(uid)
+          && colecao in ['canais', 'videos', 'contas', 'acoes', 'eventos', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+        // histórico (ações e eventos) só recebe registros novos: não se edita nem se apaga
+        allow create: if dono(uid) && ativo(uid)
+          && colecao in ['canais', 'videos', 'contas', 'acoes', 'eventos', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+        allow update, delete: if dono(uid) && ativo(uid)
+          && colecao in ['canais', 'videos', 'contas', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+      }
     }
   }
 }

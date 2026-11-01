@@ -2,24 +2,27 @@
 /* Camada de dados do painel (o app.js só fala com window.FONTE).
    Dois modos, mesma interface:
    - demonstração: sem Firebase configurado; dados de exemplo no localStorage deste navegador;
-   - Firebase: login com Google + Firestore (só o e-mail do dono passa, conferido também nas regras).
+   - Firebase: login com Google + Firestore. Cada conta tem o próprio estúdio em estudios/{uid}/...
+     e as regras (firestore.rules) só deixam cada um ler e gravar o seu.
    As telas são montadas pelo Motor a partir do estado carregado; cada ação vira um lote de
    gravações no banco (writeBatch), aplicado também no estado em memória. */
 (function () {
   const CFG = window.ESTUDIO_CONFIG || {};
   const FB = CFG.firebase || {};
   const LIGADO = Boolean(FB.apiKey && !/^COLE/.test(FB.apiKey) && FB.projectId);
+  const ADMIN = String(CFG.admin || "").trim().toLowerCase();
   const M = window.Motor;
   const VERSAO_SDK = "10.12.2";
-  const CHAVE_DEMO = "estudio:demo:v2";
+  const VERSAO_DADOS = 1; // sobe quando o formato no banco mudar (migração no primeiro acesso)
+  const CHAVE_DEMO = "estudio:demo:v3";
   const VALIDADE_MS = 30e3; // recarrega do banco se o estado tiver mais de 30 s
   const DRIVE_ID = /^[A-Za-z0-9_-]{10,100}$/;
   const MAPA = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => MAPA[c]);
-  const COLECOES_MAPA = ["videos", "contas"];
-  const COLECOES_LISTA = ["acoes", "eventos", "custos", "metricas", "receitas", "campanhas"];
+  // coleções fora do estúdio (só o dono da plataforma grava)
+  const GLOBAIS = new Set(["plataforma", "estudios"]);
 
-  /* ------------------------------------------------ arquivos fixos (canais e plataformas) */
+  /* ------------------------------------------------ arquivos fixos (modelos e plataformas) */
   let fixos = null;
   async function carregarFixos() {
     if (fixos) return fixos;
@@ -28,8 +31,8 @@
       if (!r.ok) throw new Error(`Não achei ${caminho}.`);
       return r.json();
     };
-    const [canais, plataformas] = await Promise.all([ler("dados/canais.json"), ler("dados/plataformas.json")]);
-    fixos = { canais: Object.fromEntries(canais.map((c) => [c.slug, c])), plataformas };
+    const [modelos, plataformas] = await Promise.all([ler("dados/modelos.json"), ler("dados/plataformas.json")]);
+    fixos = { modelos, plataformas };
     return fixos;
   }
 
@@ -37,7 +40,7 @@
   function lerDemo() {
     try {
       const d = JSON.parse(localStorage.getItem(CHAVE_DEMO));
-      if (d && d.versao === 2) return d;
+      if (d && d.versao === 3) return d;
     } catch {
       /* armazenamento bloqueado ou corrompido: recomeça do exemplo */
     }
@@ -50,26 +53,36 @@
       /* sem armazenamento: o exemplo continua só nesta aba */
     }
   }
+  let demoMemoria = null; // quando o navegador não deixa guardar nada
   const DEMO = {
     modo: "demo",
+    admin: true,
     async iniciar() { return true; },
     async carregar() {
       const f = await carregarFixos();
-      let d = lerDemo();
+      let d = lerDemo() || demoMemoria;
       if (!d) {
-        d = window.Semente.criar(M, new Date());
+        d = window.Semente.criar(M, new Date(), f.modelos);
         gravarDemo(d);
       }
-      return { ...d, canais: f.canais, plataformas: f.plataformas, conexao: { modo: "demo", projeto: "", email: "", funcoes: false } };
+      demoMemoria = d;
+      return {
+        ...JSON.parse(JSON.stringify(d)), modelos: f.modelos, plataformas: f.plataformas,
+        conexao: { modo: "demo", projeto: "", email: "", uid: "demo", admin: true, funcoes: false },
+      };
     },
     async gravar(mudancas) {
-      const d = lerDemo() || window.Semente.criar(M, new Date());
+      const d = lerDemo() || demoMemoria;
       M.aplicar(d, mudancas);
       gravarDemo(d);
     },
     async sair() { location.reload(); },
-    async restaurarExemplo() {
-      try { localStorage.removeItem(CHAVE_DEMO); } catch { /* nada a apagar */ }
+    async restaurarExemplo(vazio) {
+      demoMemoria = vazio ? window.Semente.vazio(new Date()) : null;
+      try {
+        if (vazio) gravarDemo(demoMemoria);
+        else localStorage.removeItem(CHAVE_DEMO);
+      } catch { /* nada a apagar */ }
     },
   };
 
@@ -89,19 +102,25 @@
     const parar = f.A.onAuthStateChanged(f.auth, (u) => { parar(); ok(u); });
   });
 
-  function telaLogin(tela, f, aviso) {
-    document.getElementById("titulo").textContent = "Entrar";
+  function cartao(tela, titulo, texto, aviso, botao) {
+    document.getElementById("titulo").textContent = titulo;
     document.getElementById("selo").textContent = "Estúdio de Canais";
     tela.innerHTML = `
       <div class="mg-card mg-in mg-entrar">
-        <p class="mg-h2">Entrar no painel</p>
-        <p class="mg-sub">Use a conta Google do dono. Ninguém mais vê os dados.</p>
+        <p class="mg-h2">${esc(titulo)}</p>
+        <p class="mg-sub">${esc(texto)}</p>
         ${aviso ? `<p class="mg-aviso mg-c-at mg-mt">${esc(aviso)}</p>` : ""}
-        <button type="button" class="mg-btn mg-pri" id="entrar-google">Entrar com Google</button>
+        <button type="button" class="mg-btn mg-pri" id="botao-entrada">${esc(botao)}</button>
         <p class="mg-erro" aria-live="polite"></p>
       </div>`;
-    const botao = tela.querySelector("#entrar-google");
-    botao.focus();
+    const b = tela.querySelector("#botao-entrada");
+    b.focus();
+    return b;
+  }
+
+  function telaLogin(tela, f, aviso) {
+    const botao = cartao(tela, "Entrar no estúdio",
+      "Entre com a sua conta Google. Cada conta tem o próprio estúdio, com canais, fila e contas separados.", aviso, "Entrar com Google");
     botao.addEventListener("click", async () => {
       botao.disabled = true;
       try {
@@ -116,49 +135,95 @@
     });
   }
 
+  /** Conta logada, mas sem estúdio liberado: explica e oferece trocar de conta. */
+  function telaBarrado(tela, f, titulo, texto) {
+    const botao = cartao(tela, titulo, texto, "", "Entrar com outra conta");
+    botao.addEventListener("click", async () => {
+      await f.A.signOut(f.auth);
+      location.reload();
+    });
+  }
+
   function erroFirebase(e) {
-    return new Error(e && e.code === "permission-denied"
-      ? "Sem permissão: confira as regras do Firestore e o e-mail do dono em web/config.js."
+    const erro = new Error(e && e.code === "permission-denied"
+      ? "Sem permissão. Se o seu estúdio foi pausado, fale com o dono da plataforma."
       : "Sem conexão com o Firebase. Tente de novo.");
+    erro.codigo = e && e.code;
+    return erro;
   }
 
   const NUVEM = {
     modo: "firebase",
     email: "",
+    uid: "",
+    admin: false,
     async iniciar(tela) {
       const f = await firebase();
+      const { F, db } = f;
       const u = await usuario(f);
       if (!u) {
         telaLogin(tela, f);
         return false;
       }
-      if (CFG.dono && String(u.email || "").toLowerCase() !== String(CFG.dono).toLowerCase()) {
-        await f.A.signOut(f.auth);
-        telaLogin(tela, f, `A conta ${u.email} não tem acesso a este painel.`);
+      const email = String(u.email || "").toLowerCase();
+      const admin = Boolean(ADMIN) && email === ADMIN && u.emailVerified;
+      try {
+        const ref = F.doc(db, "estudios", u.uid);
+        const snap = await F.getDoc(ref);
+        if (!snap.exists()) {
+          // primeiro acesso: o estúdio nasce vazio. Quem decide se a conta pode (cadastro aberto,
+          // convite ou dono da plataforma) são as regras do Firestore; a lista de convidados não sai do banco.
+          try {
+            await F.setDoc(ref, {
+              email: u.email, nome: String(u.displayName || "").slice(0, 80), ativo: true,
+              criadoEm: M.isoBR(new Date()), versaoDados: VERSAO_DADOS,
+            });
+          } catch (e) {
+            if (e && e.code === "permission-denied") {
+              telaBarrado(tela, f, "Cadastro fechado",
+                `A conta ${u.email} ainda não tem um estúdio. Peça um convite ao dono da plataforma e entre de novo.`);
+              return false;
+            }
+            throw e;
+          }
+        } else if (snap.data().ativo === false) {
+          telaBarrado(tela, f, "Estúdio pausado", "O dono da plataforma pausou este estúdio. Seus dados continuam guardados.");
+          return false;
+        }
+      } catch (e) {
+        telaBarrado(tela, f, "Não deu para abrir o estúdio", erroFirebase(e).message);
         return false;
       }
       NUVEM.email = u.email || "";
+      NUVEM.uid = u.uid;
+      NUVEM.admin = admin;
       return true;
     },
     async carregar() {
       const [fx, f] = await Promise.all([carregarFixos(), firebase()]);
       const { F, db } = f;
+      const col = (nome) => F.collection(db, "estudios", NUVEM.uid, nome);
       const agora = new Date();
       const recente = M.isoBR(new Date(agora.getTime() - 45 * 86400e3));
       const desde = M.somarDias(M.diaBR(agora), -95);
       try {
-        const [ativos, recentes, contas, acoes, eventos, custos, metricas, receitas, campanhas, config] = await Promise.all([
-          F.getDocs(F.query(F.collection(db, "videos"), F.where("status", "in", ["pauta", "produzindo", "voce", "fila", "reprovado", "aprovado", "refazer"]))),
-          F.getDocs(F.query(F.collection(db, "videos"), F.where("atualizadoEm", ">=", recente))),
-          F.getDocs(F.collection(db, "contas")),
-          F.getDocs(F.query(F.collection(db, "acoes"), F.orderBy("n", "desc"), F.limit(300))),
-          F.getDocs(F.query(F.collection(db, "eventos"), F.orderBy("n", "desc"), F.limit(60))),
-          F.getDocs(F.query(F.collection(db, "custos"), F.where("mes", ">=", desde.slice(0, 7)))),
-          F.getDocs(F.query(F.collection(db, "metricas"), F.where("data", ">=", desde))),
-          F.getDocs(F.collection(db, "receitas")),
-          F.getDocs(F.collection(db, "campanhas")),
-          F.getDoc(F.doc(db, "config", "geral")),
-        ]);
+        const pedidos = [
+          F.getDocs(col("canais")),
+          F.getDocs(F.query(col("videos"), F.where("status", "in", ["pauta", "produzindo", "voce", "fila", "reprovado", "aprovado", "refazer"]))),
+          F.getDocs(F.query(col("videos"), F.where("atualizadoEm", ">=", recente))),
+          F.getDocs(col("contas")),
+          F.getDocs(F.query(col("acoes"), F.orderBy("n", "desc"), F.limit(300))),
+          F.getDocs(F.query(col("eventos"), F.orderBy("n", "desc"), F.limit(60))),
+          F.getDocs(F.query(col("custos"), F.where("mes", ">=", desde.slice(0, 7)))),
+          F.getDocs(F.query(col("metricas"), F.where("data", ">=", desde))),
+          F.getDocs(col("receitas")),
+          F.getDocs(col("campanhas")),
+          F.getDoc(F.doc(db, "estudios", NUVEM.uid, "config", "geral")),
+        ];
+        if (NUVEM.admin) {
+          pedidos.push(F.getDoc(F.doc(db, "plataforma", "acesso")), F.getDocs(F.query(F.collection(db, "estudios"), F.limit(500))));
+        }
+        const [canais, ativos, recentes, contas, acoes, eventos, custos, metricas, receitas, campanhas, config, acesso, estudios] = await Promise.all(pedidos);
         const mapa = (...snaps) => {
           const o = {};
           snaps.forEach((s) => s.forEach((d) => { o[d.id] = { id: d.id, ...d.data() }; }));
@@ -169,34 +234,52 @@
           s.forEach((d) => a.push({ id: d.id, ...d.data() }));
           return a;
         };
-        return {
-          exemplo: false, canais: fx.canais, plataformas: fx.plataformas,
+        const porSlug = {};
+        canais.forEach((d) => { porSlug[d.id] = { ...d.data(), slug: d.id }; });
+        const estado = {
+          exemplo: false, canais: porSlug, modelos: fx.modelos, plataformas: fx.plataformas,
           videos: mapa(ativos, recentes), contas: mapa(contas),
           acoes: listaDe(acoes), eventos: listaDe(eventos), custos: listaDe(custos), metricas: listaDe(metricas),
           receitas: listaDe(receitas), campanhas: listaDe(campanhas), config: config.exists() ? config.data() : {},
-          conexao: { modo: "firebase", projeto: FB.projectId, email: NUVEM.email, funcoes: Boolean(CFG.funcoes) },
+          conexao: { modo: "firebase", projeto: FB.projectId, email: NUVEM.email, uid: NUVEM.uid, admin: NUVEM.admin, funcoes: Boolean(CFG.funcoes) },
         };
+        if (NUVEM.admin) {
+          estado.plataforma = { acesso: acesso.exists() ? acesso.data() : { aberto: false, convidados: [] } };
+          estado.estudios = {};
+          estudios.forEach((d) => { estado.estudios[d.id] = d.data(); });
+        }
+        return estado;
       } catch (e) {
         throw erroFirebase(e);
       }
     },
     async gravar(mudancas) {
       const { F, db } = await firebase();
-      const lote = F.writeBatch(db);
-      for (const m of mudancas) {
-        if (m.tipo === "set") {
-          const { id: _ignorar, ...dados } = m.dados;
-          lote.set(F.doc(db, m.col, m.id), dados, m.substituir ? {} : { merge: true });
-        } else if (m.tipo === "add") {
-          lote.set(F.doc(F.collection(db, m.col)), m.dados);
-        } else if (m.tipo === "config") {
-          lote.set(F.doc(db, "config", "geral"), m.dados, { merge: true });
-        }
-      }
+      const doc = (col, id) => (GLOBAIS.has(col) ? F.doc(db, col, id) : F.doc(db, "estudios", NUVEM.uid, col, id));
       try {
+        // canal só sai se não sobrou vídeo nenhum no banco (o estado em memória guarda só os recentes)
+        for (const m of mudancas.filter((x) => x.tipo === "del" && x.col === "canais")) {
+          const q = F.query(F.collection(db, "estudios", NUVEM.uid, "videos"), F.where("canal", "==", m.id));
+          if ((await F.getCountFromServer(q)).data().count > 0) {
+            throw new Error("Este canal ainda tem vídeos guardados. Pause o canal em vez de apagar.");
+          }
+        }
+        const lote = F.writeBatch(db);
+        for (const m of mudancas) {
+          if (m.tipo === "set") {
+            const { id: _ignorar, ...dados } = m.dados;
+            lote.set(doc(m.col, m.id), dados, m.substituir ? {} : { merge: true });
+          } else if (m.tipo === "del") {
+            lote.delete(doc(m.col, m.id));
+          } else if (m.tipo === "add") {
+            lote.set(F.doc(F.collection(db, "estudios", NUVEM.uid, m.col)), m.dados);
+          } else if (m.tipo === "config") {
+            lote.set(doc("config", "geral"), m.dados, { merge: true });
+          }
+        }
         await lote.commit();
       } catch (e) {
-        throw erroFirebase(e);
+        throw e.code ? erroFirebase(e) : e;
       }
     },
     async sair() {
@@ -222,6 +305,7 @@
 
   window.FONTE = {
     get modo() { return banco.modo; },
+    get admin() { return banco.admin; },
     iniciar: (tela) => banco.iniciar(tela),
     async get(caminho) {
       const e = await obterEstado(false);
@@ -244,8 +328,8 @@
       return v && DRIVE_ID.test(v.drive_id || "") ? `https://drive.google.com/uc?export=download&id=${v.drive_id}` : "";
     },
     sair: () => banco.sair(),
-    async restaurarExemplo() {
-      await banco.restaurarExemplo();
+    async restaurarExemplo(vazio) {
+      await banco.restaurarExemplo(vazio);
       estado = null;
     },
   };

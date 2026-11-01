@@ -37,6 +37,17 @@
   const DIA = 86400e3;
   const ID_VIDEO = "([a-f0-9]{6,40})";
   const SLUG = "([a-z0-9][a-z0-9-]{0,40})";
+  const UID = "([A-Za-z0-9_-]{1,128})";
+  const VERSAO = "3.0";
+  const LIMITE_CANAIS = 10;
+  const LIMITE_CONVIDADOS = 200;
+  const DURACAO_FAIXA = [15, 180];
+  const DURACAO_PADRAO = [61, 80];
+  const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const COR = /^#[0-9a-fA-F]{6}$/;
+  const EMAIL = /^[^\s@<>"',;]{1,64}@[^\s@<>"',;]{1,185}\.[a-z]{2,24}$/i;
+  // o que um canal herda do modelo (o resto vem do formulário)
+  const DO_MODELO = ["idioma", "formato", "producao", "roteiro", "estilo_visual", "personagens", "janela_de_missao", "busca_visual_padrao", "sistema"];
 
   class Invalido extends Error {
     constructor(mensagem, status = 422, dados = undefined) {
@@ -74,6 +85,8 @@
   /* ------------------------------------------------------------ mudanças */
 
   const set = (col, id, dados) => ({ tipo: "set", col, id, dados });
+  const trocar = (col, id, dados) => ({ tipo: "set", col, id, dados, substituir: true });
+  const apagar = (col, id) => ({ tipo: "del", col, id });
   const add = (col, dados) => ({ tipo: "add", col, dados });
   const cfg = (dados) => ({ tipo: "config", dados });
   const evento = (agora, etapa, alvo, msg, nivel) =>
@@ -97,6 +110,8 @@
         estado[m.col] = estado[m.col] || {};
         const copia = JSON.parse(JSON.stringify(m.dados));
         estado[m.col][m.id] = m.substituir ? copia : mesclar(estado[m.col][m.id] || {}, copia);
+      } else if (m.tipo === "del") {
+        if (estado[m.col]) delete estado[m.col][m.id];
       } else if (m.tipo === "add") {
         estado[m.col] = estado[m.col] || [];
         estado[m.col].unshift(JSON.parse(JSON.stringify(m.dados)));
@@ -115,8 +130,7 @@
   };
   const ligado = (e, id) => {
     const c = e.canais[id];
-    const salvo = ((e.config || {}).canais_ligados || {})[id];
-    return Boolean(c && c.enabled !== false && (salvo === undefined ? true : salvo));
+    return Boolean(c && c.ligado !== false);
   };
   const config = (e, chave) => num((e.config || {})[chave]);
   const metricaCanal = (e, canal, chave) => num((((e.config || {}).metricas || {}).por_canal || {})[canal]?.[chave]);
@@ -296,11 +310,141 @@
     const canal = e.canais[slug];
     if (!canal) throw new Invalido("canal não encontrado", 404);
     const valor = corpo.ligado === true;
-    if (valor && canal.enabled === false) throw new Invalido("canal desligado em dados/canais.json (enabled: false)", 409);
     return {
       resposta: { ligado: valor },
-      mudancas: [cfg({ canais_ligados: { [slug]: valor } }), evento(agora, "canal", slug, valor ? "ligado" : "pausado", "info")],
+      mudancas: [set("canais", slug, { ligado: valor, atualizadoEm: isoBR(agora) }), evento(agora, "canal", slug, valor ? "ligado" : "pausado", "info")],
     };
+  }
+
+  /* ------------------------------------------------------------ canais criados no painel */
+
+  /** "Histórias da Bíblia!" -> "historias-da-biblia" (vira o id do canal e não muda mais). */
+  function slugDe(nome) {
+    const s = String(nome || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "");
+    return s || "canal";
+  }
+  function slugLivre(e, base) {
+    let slug = base;
+    for (let i = 2; e.canais[slug]; i += 1) slug = `${base}-${i}`;
+    return slug;
+  }
+  const idsPlataformas = (e) => e.plataformas.plataformas.map((p) => p.id);
+  const duracaoDo = (c) => {
+    const d = ((c || {}).formato || {}).short_segundos;
+    return Array.isArray(d) && d.length === 2 ? d : DURACAO_PADRAO;
+  };
+
+  /** Confere o formulário do canal; devolve os campos limpos ou lança 422 com o erro de cada campo. */
+  function validarCanal(e, corpo) {
+    const erros = {};
+    const nome = texto(corpo.nome, 80);
+    if (nome.length < 2 || nome.length > 40) erros.nome = "de 2 a 40 letras";
+    const cor = String(corpo.cor || "").trim();
+    if (!COR.test(cor)) erros.cor = "escolha uma cor";
+    const descricao = texto(corpo.descricao, 400);
+    if (descricao.length > 160) erros.descricao = "até 160 letras";
+    const horarios = [...new Set((Array.isArray(corpo.horarios) ? corpo.horarios : []).map((h) => String(h ?? "").trim()).filter(Boolean))].sort();
+    if (!horarios.length) erros.horarios = "informe pelo menos um horário";
+    else if (horarios.length > 4) erros.horarios = "até 4 horários por dia";
+    else if (!horarios.every((h) => HORA.test(h))) erros.horarios = "use o formato 12:00";
+    const marcadas = new Set(Array.isArray(corpo.plataformas) ? corpo.plataformas : []);
+    const plataformas = idsPlataformas(e).filter((id) => marcadas.has(id));
+    if (!marcadas.size) erros.plataformas = "marque pelo menos uma rede";
+    else if (plataformas.length !== marcadas.size) erros.plataformas = "rede desconhecida";
+    const dmin = Number(corpo.duracao_min);
+    const dmax = Number(corpo.duracao_max);
+    const [piso, teto_] = DURACAO_FAIXA;
+    if (![dmin, dmax].every((d) => Number.isInteger(d) && d >= piso && d <= teto_) || dmin > dmax) {
+      erros.duracao_min = `de ${piso} a ${teto_} segundos, e o mínimo não pode passar do máximo`;
+    }
+    if (Object.keys(erros).length) throw new Invalido("Confira os campos marcados.", 422, { erros });
+    return { nome, cor: cor.toUpperCase(), descricao, horarios, plataformas, duracao: [dmin, dmax] };
+  }
+
+  function criarCanal(e, corpo, agora) {
+    if (Object.keys(e.canais).length >= LIMITE_CANAIS) throw new Invalido(`Cada estúdio pode ter até ${LIMITE_CANAIS} canais.`, 409);
+    const modelo = corpo.modelo ? (e.modelos || []).find((m) => m.id === corpo.modelo) : null;
+    if (corpo.modelo && !modelo) throw new Invalido("modelo desconhecido", 422);
+    const v = validarCanal(e, corpo);
+    const slug = slugLivre(e, slugDe(v.nome));
+    const herdado = {};
+    if (modelo) DO_MODELO.filter((k) => k in modelo).forEach((k) => { herdado[k] = JSON.parse(JSON.stringify(modelo[k])); });
+    const canal = {
+      idioma: "pt-BR", producao: { quadros: "manual", gancho: "nenhum", voz: "tts" }, roteiro: { instrucoes: "" }, personagens: [],
+      ...herdado,
+      slug, nome: v.nome, cor: v.cor, descricao: v.descricao, horarios: v.horarios, plataformas: v.plataformas,
+      formato: { ...(herdado.formato || {}), short_segundos: v.duracao, tiktok_segundos: v.duracao },
+      modelo: modelo ? modelo.id : "", ligado: true, criadoEm: isoBR(agora), atualizadoEm: isoBR(agora),
+    };
+    return {
+      resposta: { slug, nome: v.nome },
+      mudancas: [trocar("canais", slug, canal), evento(agora, "canal", slug, `canal criado: ${v.nome}`, "ok")],
+    };
+  }
+
+  function editarCanal(e, slug, corpo, agora) {
+    if (!e.canais[slug]) throw new Invalido("canal não encontrado", 404);
+    const v = validarCanal(e, corpo);
+    const patch = {
+      nome: v.nome, cor: v.cor, descricao: v.descricao, horarios: v.horarios, plataformas: v.plataformas,
+      formato: { short_segundos: v.duracao, tiktok_segundos: v.duracao }, atualizadoEm: isoBR(agora),
+    };
+    return {
+      resposta: { slug, nome: v.nome },
+      mudancas: [set("canais", slug, patch), evento(agora, "canal", slug, "canal editado", "info")],
+    };
+  }
+
+  /** Só apaga canal sem vídeos (o histórico não pode ficar sem dono); as contas vão junto. */
+  function apagarCanal(e, slug, agora) {
+    const canal = e.canais[slug];
+    if (!canal) throw new Invalido("canal não encontrado", 404);
+    const videos = lista(e.videos).filter((v) => v.canal === slug).length;
+    if (videos) throw new Invalido(`O canal tem ${videos} vídeo(s). Pause o canal em vez de apagar.`, 409);
+    const contas = Object.keys(e.contas || {}).filter((id) => id.startsWith(`${slug}:`));
+    return {
+      resposta: { ok: true },
+      mudancas: [apagar("canais", slug), ...contas.map((id) => apagar("contas", id)), evento(agora, "canal", slug, `canal apagado: ${canal.nome}`, "info")],
+    };
+  }
+
+  /* ------------------------------------------------------------ dono da plataforma */
+
+  function exigirAdmin(e) {
+    if (!(e.conexao || {}).admin) throw new Invalido("Só o dono da plataforma abre esta tela.", 403);
+  }
+
+  function telaPlataforma(e) {
+    exigirAdmin(e);
+    const a = (e.plataforma || {}).acesso || {};
+    const voce = (e.conexao || {}).uid;
+    return {
+      aberto: a.aberto === true,
+      convidados: a.convidados || [],
+      estudios: Object.entries(e.estudios || {}).map(([uid, s]) => ({
+        uid, email: s.email || "", nome: s.nome || "", criado_em: s.criadoEm || null, ativo: s.ativo !== false, voce: uid === voce,
+      })).sort((x, y) => (x.criado_em || "").localeCompare(y.criado_em || "")),
+    };
+  }
+
+  function salvarAcesso(e, corpo, agora) {
+    exigirAdmin(e);
+    const bruto = Array.isArray(corpo.convidados) ? corpo.convidados.join("\n") : String(corpo.convidados || "");
+    const convidados = [...new Set(bruto.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+    const ruim = convidados.find((x) => x.length > 254 || !EMAIL.test(x));
+    if (ruim) throw new Invalido("Confira os e-mails.", 422, { erros: { convidados: `e-mail inválido: ${ruim}` } });
+    if (convidados.length > LIMITE_CONVIDADOS) throw new Invalido("Confira os e-mails.", 422, { erros: { convidados: `até ${LIMITE_CONVIDADOS} convidados` } });
+    const dados = { aberto: corpo.aberto === true, convidados, atualizadoEm: isoBR(agora) };
+    return { resposta: { aberto: dados.aberto, convidados }, mudancas: [trocar("plataforma", "acesso", dados)] };
+  }
+
+  function ativarEstudio(e, uid, corpo) {
+    exigirAdmin(e);
+    if (!(e.estudios || {})[uid]) throw new Invalido("estúdio não encontrado", 404);
+    if (uid === e.conexao.uid) throw new Invalido("Você não pode pausar o próprio estúdio.", 409);
+    const ativo = corpo.ativo === true;
+    return { resposta: { ativo }, mudancas: [set("estudios", uid, { ativo })] };
   }
 
   function salvarConfig(e, valores) {
@@ -554,6 +698,7 @@
     return {
       numeros_em: agoraIso,
       exemplo: Boolean(e.exemplo),
+      canais_total: Object.keys(e.canais).length,
       kpis: {
         esperando: prontos + reprovados, prontos, reprovados, por_canal: porCanal,
         publicados_7d: publicados, planejados_7d: planejados, views_7d: views7,
@@ -610,14 +755,16 @@
   function canais(e, agora) {
     const hoje = diaBR(agora);
     const agoraIso = isoBR(agora);
-    const resultado = Object.values(e.canais).map((c) => {
+    const resultado = Object.values(e.canais).sort((a, b) => (a.criadoEm || "").localeCompare(b.criadoEm || "") || a.slug.localeCompare(b.slug)).map((c) => {
       const revisoes = lista(e.videos).filter((v) => v.canal === c.slug && num(v.revisaoS) !== null).map((v) => v.revisaoS);
       const proxima = lista(e.videos).filter((v) => v.canal === c.slug && v.status === "aprovado" && v.horario && v.horario >= agoraIso)
         .map((v) => v.horario).sort()[0] || null;
       const inscritos = metricaCanal(e, c.slug, "inscritos");
       const views90 = somaViews(e, somarDias(hoje, -90), hoje, c.slug);
       return {
-        id: c.slug, nome: c.nome, cor: c.cor, descricao: c.descricao || "", ligado: ligado(e, c.slug), permitido: c.enabled !== false,
+        id: c.slug, nome: c.nome, cor: c.cor, descricao: c.descricao || "", ligado: ligado(e, c.slug),
+        horarios: c.horarios || [], plataformas: c.plataformas || [], duracao: duracaoDo(c), modelo: c.modelo || "",
+        n_videos: lista(e.videos).filter((v) => v.canal === c.slug).length,
         inscritos, seguidores_tiktok: metricaCanal(e, c.slug, "seguidores_tiktok"),
         views_30d: somaViews(e, somarDias(hoje, -30), hoje, c.slug), media_por_short: metricaCanal(e, c.slug, "media_views_short"),
         revisao_min: revisoes.length ? arred(revisoes.reduce((s, x) => s + x, 0) / revisoes.length / 60, 1) : null,
@@ -625,7 +772,13 @@
         ypp: { inscritos, inscritos_meta: 500, views_90d: views90, views_meta: 3000000 },
       };
     });
-    return { canais: resultado, gatilho: condicoes(medir(e, agora)) };
+    return {
+      canais: resultado, gatilho: condicoes(medir(e, agora)), limite: LIMITE_CANAIS, duracao_faixa: DURACAO_FAIXA,
+      modelos: (e.modelos || []).map((m) => ({
+        id: m.id, nome: m.nome, cor: m.cor, descricao: m.descricao || "", horarios: m.horarios || [], plataformas: m.plataformas || [], duracao: duracaoDo(m),
+      })),
+      plataformas: e.plataformas.plataformas.map((p) => ({ id: p.id, nome: p.nome, cor: p.cor })),
+    };
   }
 
   function series(e) {
@@ -680,7 +833,7 @@
     lista(e.videos).forEach((v) => { status[v.status] = (status[v.status] || 0) + 1; });
     const conferido = new Date(`${e.plataformas.verificado_em}T12:00:00${OFFSET}`);
     return {
-      versao: "2.0", ...(e.conexao || {}),
+      versao: VERSAO, ...(e.conexao || {}), canais: Object.keys(e.canais).length,
       plataformas_dias: Math.floor((agora.getTime() - conferido.getTime()) / DIA),
       erros_24h: eventos.filter((x) => x.nivel === "cr" && x.ts >= desde).length,
       ultimo_evento: eventos[0] ? { ts: eventos[0].ts, etapa: eventos[0].etapa, alvo: eventos[0].alvo, msg: eventos[0].msg, nivel: eventos[0].nivel } : null,
@@ -756,6 +909,7 @@
       case "/api/saude": return saude(e, agora);
       case "/api/plataformas": return plataformas(e, agora);
       case "/api/publicar": return publicar(e, aba || "pendentes", agora);
+      case "/api/plataforma": return telaPlataforma(e);
       default: throw new Invalido("tela desconhecida", 404);
     }
   }
@@ -766,6 +920,11 @@
     [/^\/api\/videos$/, (e, m, c, a) => adicionarVideo(e, c, a)],
     [/^\/api\/lotes$/, (e, m, c, a) => criarLote(e, c, a)],
     [new RegExp(`^/api/canais/${SLUG}/ligado$`), (e, m, c, a) => ligarCanal(e, m[1], c, a)],
+    [new RegExp(`^/api/canais/${SLUG}/apagar$`), (e, m, c, a) => apagarCanal(e, m[1], a)],
+    [new RegExp(`^/api/canais/${SLUG}$`), (e, m, c, a) => editarCanal(e, m[1], c, a)],
+    [/^\/api\/canais$/, (e, m, c, a) => criarCanal(e, c, a)],
+    [/^\/api\/plataforma\/acesso$/, (e, m, c, a) => salvarAcesso(e, c, a)],
+    [new RegExp(`^/api/plataforma/estudios/${UID}/ativo$`), (e, m, c) => ativarEstudio(e, m[1], c)],
     [/^\/api\/config$/, (e, m, c) => salvarConfig(e, c)],
     [new RegExp(`^/api/contas/${SLUG}/${SLUG}$`), (e, m, c, a) => salvarConta(e, m[1], m[2], c, a)],
     [new RegExp(`^/api/publicacoes/${ID_VIDEO}/${SLUG}$`), (e, m, c, a) => marcarPublicacao(e, m[1], m[2], c, a)],
@@ -780,8 +939,8 @@
   }
 
   const Motor = {
-    ETAPAS, FAIXAS_CONFIG, Invalido, isoBR, diaBR, mesBR, somarDias, aplicar, get, post,
-    proximoHorario, hostAceito, legenda, elegibilidade, progresso, idDoDrive, testeDuracao, novoId,
+    ETAPAS, FAIXAS_CONFIG, VERSAO, LIMITE_CANAIS, Invalido, isoBR, diaBR, mesBR, somarDias, aplicar, get, post,
+    proximoHorario, hostAceito, legenda, elegibilidade, progresso, idDoDrive, testeDuracao, novoId, slugDe,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = Motor;
   else raiz.Motor = Motor;

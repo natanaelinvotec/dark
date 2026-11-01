@@ -2,7 +2,7 @@
 /* Dados de exemplo do modo demonstração (os mesmos do mockup), relativos ao "agora".
    Só roda no navegador de quem abre sem Firebase; nada disso vai para o banco. */
 (function (raiz) {
-  function criar(Motor, agora) {
+  function criar(Motor, agora, modelos) {
     const { isoBR, diaBR, mesBR, somarDias, ETAPAS } = Motor;
     const DIA = 86400e3;
     let seq = 0;
@@ -98,9 +98,17 @@
     }).reverse();
     const conta = (canal, plataforma, usuario, situacao, numeros) =>
       [`${canal}:${plataforma}`, { canal, plataforma, usuario, url: "", situacao, seguranca: true, numeros, atualizadoEm: agoraIso }];
+    // os dois canais de exemplo nascem dos modelos, como se tivessem sido criados no painel
+    const canais = {};
+    (modelos || []).forEach((m, i) => {
+      const { id, ...resto } = JSON.parse(JSON.stringify(m));
+      const criado = isoBR(new Date(agora.getTime() - (40 - i) * DIA));
+      canais[id] = { ...resto, slug: id, modelo: id, ligado: true, criadoEm: criado, atualizadoEm: criado };
+    });
     return {
-      versao: 2,
+      ...base(agora),
       exemplo: true,
+      canais,
       videos,
       contas: Object.fromEntries([
         conta("biblico-manhwa", "youtube", "@biblico.manhwa", "crescendo", { inscritos: 940, views_shorts_90d: 1240000, seguidores: 940 }),
@@ -130,7 +138,28 @@
       },
     };
   }
-  const Semente = { criar };
+  /** Partes comuns da demonstração: versão do formato e a tela do dono da plataforma. */
+  function base(agora) {
+    const quando = (dias) => new Date(agora.getTime() - dias * 86400e3).toISOString();
+    return {
+      versao: 3,
+      plataforma: { acesso: { aberto: false, convidados: ["amiga@exemplo.com"] } },
+      estudios: {
+        demo: { email: "voce@exemplo.com", nome: "Você (demonstração)", ativo: true, criadoEm: quando(40) },
+        convidada: { email: "amiga@exemplo.com", nome: "Amiga convidada", ativo: true, criadoEm: quando(3) },
+      },
+    };
+  }
+
+  /** Estúdio recém-criado: tudo zerado, sem canais (é o que um usuário novo vê). */
+  function vazio(agora) {
+    return {
+      ...base(agora), exemplo: false, canais: {}, videos: {}, contas: {}, acoes: [], eventos: [], custos: [],
+      metricas: [], receitas: [], campanhas: [], config: {},
+    };
+  }
+
+  const Semente = { criar, vazio };
   if (typeof module !== "undefined" && module.exports) module.exports = Semente;
   else raiz.Semente = Semente;
 })(typeof window !== "undefined" ? window : globalThis);

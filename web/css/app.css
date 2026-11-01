@@ -236,6 +236,20 @@ textarea.mg-texto-curto { min-height: 56px; }
 .mg-in { animation: mgIn 280ms var(--ease) both; }
 @keyframes mgIn { from { opacity: 0; filter: blur(6px); transform: translateY(4px); } to { opacity: 1; filter: none; transform: none; } }
 @keyframes mgFade { from { opacity: 0; } to { opacity: 1; } }
+/* ----- canais e primeiro acesso ----- */
+.mg-grupo { border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
+.mg-grupo .mg-legend { padding: 0; margin-bottom: 6px; }
+.mg-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.mg-check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 1.5px solid var(--linha); border-radius: 999px; background: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+.mg-check:has(input:checked) { border-color: var(--teal); background: var(--card2); }
+.mg-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--navy); }
+.mg-cor { padding: 4px 6px; cursor: pointer; max-width: 160px; }
+.mg-perigo { color: var(--cr); border-color: var(--cr-bg); }
+.mg-perigo:hover:not(:disabled) { border-color: var(--cr); color: var(--cr); }
+.mg-passos { margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.5; }
+.mg-passos li { margin: 6px 0; }
+.mg-barra-abas .mg-entre { flex: 1 1 100%; gap: 12px; flex-wrap: wrap; }
+
 @media (prefers-reduced-motion: reduce) {
   .mg-in { animation: mgFade 160ms both; }
   .mg-esqueleto { animation: none; }

@@ -3,15 +3,26 @@
 ## O que proteger
 1. **Os canais** (contas nas plataformas): passkey ou verificação em 2 etapas em todas; códigos de
    backup impressos. O painel nunca pede, guarda ou digita senha de plataforma.
-2. **Os dados do painel** (Firestore): fila, contas, números, dinheiro.
-3. **Chaves de API** da produção automática (quando `functions/` existir).
+2. **Os dados de cada estúdio** (Firestore): fila, canais, contas, números, dinheiro.
+3. **A cota grátis do projeto** (plano Spark): quem tem estúdio grava no mesmo projeto.
+4. **Chaves de API** da produção automática (quando `functions/` existir).
 
-## Como o painel se protege
-- **Login Google** + **regras do Firestore** (`firestore.rules`): só o e-mail do dono, verificado
-  pelo Google, lê e grava. `acoes` e `eventos` (auditoria) só aceitam criar: ninguém edita nem
-  apaga pelo navegador. Coleções fora da lista são recusadas.
+## Como a plataforma se protege
+- **Um estúdio por conta Google** (`firestore.rules`): tudo fica em `estudios/{uid}/...` e só a
+  conta dona daquele `uid`, com e-mail verificado pelo Google, lê e grava ali. Coleções fora da
+  lista são recusadas. `acoes` e `eventos` (auditoria) só aceitam criar: ninguém edita nem apaga.
+- **Cadastro fechado por padrão:** um estúdio novo só nasce se o dono da plataforma estiver entrando,
+  se o cadastro estiver aberto ou se o e-mail estiver na lista de convidados (`plataforma/acesso`).
+  A regra confere isso no banco; esconder o botão no site não bastaria.
+- **Pausar estúdio:** o dono da plataforma muda só o campo `ativo`; com `ativo == false` as regras
+  recusam leitura e gravação daquele estúdio. O usuário não consegue se reativar (as regras não
+  deixam ele mexer em `ativo`, `email` nem `criadoEm`).
+- **O dono da plataforma não lê os estúdios dos outros:** vê só e-mail, nome, data e situação.
+- **Cota:** com o cadastro aberto, qualquer conta Google pode criar estúdio e gastar a cota grátis
+  (leituras e gravações por dia). Abra só quando quiser divulgar, e pause estúdios abusivos.
 - O `firebaseConfig` em `web/config.js` **não é segredo** (é público em todo site Firebase); quem
-  protege os dados são o login e as regras.
+  protege os dados são o login e as regras. O e-mail do dono está no `config.js` (só para mostrar a
+  tela de administração) e em `firestore.rules` (onde vale de verdade); um teste confere que são iguais.
 - **Cabeçalhos** do Hosting (`firebase.json`): CSP sem `unsafe-inline` (estilos dinâmicos via
   CSSOM), `frame-ancestors 'none'`, `nosniff`, `no-referrer`.
 - Todo texto do banco passa por `esc()` antes de virar HTML; links salvos (perfil, post, Drive) só
@@ -31,4 +42,4 @@
 - `functions/` terá `package-lock.json` e `npm audit` no CI quando existir.
 
 ## Reportar um problema
-Projeto pessoal: anote em `tasks/todo.md` com a etiqueta `[segurança]`.
+Anote em `tasks/todo.md` com a etiqueta `[segurança]`.

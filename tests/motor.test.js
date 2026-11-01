@@ -10,19 +10,26 @@ const Semente = require("../web/js/semente.js");
 
 const raiz = path.join(__dirname, "..");
 const ler = (f) => JSON.parse(fs.readFileSync(path.join(raiz, f), "utf8"));
-const CANAIS = Object.fromEntries(ler("web/dados/canais.json").map((c) => [c.slug, c]));
+const MODELOS = ler("web/dados/modelos.json");
 const PLATAFORMAS = ler("web/dados/plataformas.json");
 const AGORA = new Date("2026-11-02T13:00:00-03:00"); // segunda, 13h em Brasília
+const CONEXAO = { modo: "demo", uid: "demo", admin: false };
+// os canais de exemplo nascem dos modelos, como na demonstração
+const CANAIS = Semente.criar(M, AGORA, MODELOS).canais;
 
-function estadoVazio() {
+function estadoVazio(canais = CANAIS) {
   return {
-    exemplo: false, canais: CANAIS, plataformas: PLATAFORMAS, videos: {}, contas: {}, acoes: [], eventos: [],
-    custos: [], metricas: [], receitas: [], campanhas: [], config: {}, conexao: { modo: "demo" },
+    exemplo: false, canais: JSON.parse(JSON.stringify(canais)), modelos: MODELOS, plataformas: PLATAFORMAS, videos: {}, contas: {},
+    acoes: [], eventos: [], custos: [], metricas: [], receitas: [], campanhas: [], config: {}, conexao: { ...CONEXAO },
   };
 }
 function comExemplo() {
-  return { ...Semente.criar(M, AGORA), canais: CANAIS, plataformas: PLATAFORMAS, conexao: { modo: "demo" } };
+  return { ...Semente.criar(M, AGORA, MODELOS), modelos: MODELOS, plataformas: PLATAFORMAS, conexao: { ...CONEXAO } };
 }
+const FORM_CANAL = {
+  nome: "Histórias da Bíblia!", cor: "#2563c9", descricao: "Teste", horarios: ["19:00", "12:00", "12:00"],
+  plataformas: ["tiktok", "youtube"], duracao_min: 61, duracao_max: 80,
+};
 function postar(e, caminho, corpo, agora = AGORA) {
   const r = M.post(e, caminho, corpo, agora);
   M.aplicar(e, r.mudancas);
@@ -142,12 +149,119 @@ test("configurações: vírgula, faixas e campos desconhecidos", () => {
   assert.throws(() => M.post(e, "/api/config", { senha: "x" }, AGORA), (err) => "senha" in err.dados.erros);
 });
 
-test("canal desligado no arquivo não liga pelo painel", () => {
+test("criar canal: id pelo nome, modelo, ordem das redes e validação", () => {
+  const e = estadoVazio({});
+  const r = postar(e, "/api/canais", { ...FORM_CANAL, modelo: "biblico-manhwa" });
+  assert.equal(r.slug, "historias-da-biblia");
+  const c = e.canais[r.slug];
+  assert.deepEqual(c.horarios, ["12:00", "19:00"]); // sem repetição, em ordem
+  assert.deepEqual(c.plataformas, ["youtube", "tiktok"]); // na ordem de plataformas.json
+  assert.equal(c.cor, "#2563C9");
+  assert.equal(c.ligado, true);
+  assert.equal(c.modelo, "biblico-manhwa");
+  assert.ok(c.personagens.length >= 3, "herda os personagens do modelo");
+  assert.deepEqual(c.formato.short_segundos, [61, 80]);
+  assert.equal(c.formato.palavras_min, 150, "herda o formato do modelo");
+  // mesmo nome de novo: ganha sufixo em vez de sobrescrever
+  assert.equal(postar(e, "/api/canais", FORM_CANAL).slug, "historias-da-biblia-2");
+  assert.deepEqual(e.canais["historias-da-biblia-2"].personagens, []);
+  assert.equal(M.slugDe("  ¡Ciência & Espaço!  "), "ciencia-espaco");
+  assert.equal(M.slugDe("***"), "canal");
+
+  const erro = (corpo) => {
+    try {
+      M.post(e, "/api/canais", { ...FORM_CANAL, ...corpo }, AGORA);
+    } catch (err) {
+      assert.equal(err.status, 422);
+      return err.dados.erros;
+    }
+    assert.fail("devia recusar");
+  };
+  assert.ok(erro({ nome: "x" }).nome);
+  assert.ok(erro({ cor: "azul" }).cor);
+  assert.ok(erro({ horarios: [] }).horarios);
+  assert.ok(erro({ horarios: ["25:00"] }).horarios);
+  assert.ok(erro({ horarios: ["08:00", "10:00", "12:00", "14:00", "16:00"] }).horarios);
+  assert.ok(erro({ plataformas: [] }).plataformas);
+  assert.ok(erro({ plataformas: ["orkut"] }).plataformas);
+  assert.ok(erro({ duracao_min: 90, duracao_max: 60 }).duracao_min);
+  assert.ok(erro({ duracao_max: 600 }).duracao_min);
+  assert.throws(() => M.post(e, "/api/canais", { ...FORM_CANAL, modelo: "nao-existe" }, AGORA), (err) => err.status === 422);
+});
+
+test("criar canal: limite por estúdio", () => {
+  const e = estadoVazio({});
+  for (let i = 0; i < M.LIMITE_CANAIS; i += 1) postar(e, "/api/canais", { ...FORM_CANAL, nome: `Canal ${i}` });
+  assert.throws(() => M.post(e, "/api/canais", FORM_CANAL, AGORA), (err) => err.status === 409);
+});
+
+test("editar canal: mantém o id e o que veio do modelo", () => {
   const e = estadoVazio();
-  e.canais = { ...CANAIS, teste: { ...CANAIS.curiosidades, slug: "teste", enabled: false } };
-  assert.throws(() => M.post(e, "/api/canais/teste/ligado", { ligado: true }, AGORA), (err) => err.status === 409);
+  postar(e, "/api/canais/curiosidades", { ...FORM_CANAL, nome: "Curiosidades BR", horarios: ["09:00"], duracao_min: 62, duracao_max: 75 });
+  const c = e.canais.curiosidades;
+  assert.equal(c.nome, "Curiosidades BR");
+  assert.deepEqual(c.horarios, ["09:00"]);
+  assert.deepEqual(c.formato.short_segundos, [62, 75]);
+  assert.equal(c.formato.palavras_max, 195, "o resto do formato continua");
+  assert.equal(M.proximoHorario(e, c, AGORA), "2026-11-03T09:00:00-03:00");
+  assert.throws(() => M.post(e, "/api/canais/nao-existe", FORM_CANAL, AGORA), (err) => err.status === 404);
+});
+
+test("ligar/desligar e apagar canal", () => {
+  const e = estadoVazio();
   postar(e, "/api/canais/curiosidades/ligado", { ligado: false });
   assert.equal(M.get(e, "/api/canais", AGORA).canais.find((c) => c.id === "curiosidades").ligado, false);
+  assert.equal(M.get(e, "/api/resumo", AGORA).kpis.planejados_7d, 14, "canal pausado não conta no planejado");
+
+  postar(e, "/api/contas/biblico-manhwa/tiktok", { situacao: "criada", usuario: "@biblia" });
+  postar(e, "/api/canais/biblico-manhwa/apagar", {});
+  assert.ok(!e.canais["biblico-manhwa"]);
+  assert.deepEqual(Object.keys(e.contas), [], "as contas do canal vão junto");
+
+  naFila(e, "curiosidades");
+  assert.throws(() => M.post(e, "/api/canais/curiosidades/apagar", {}, AGORA), (err) => err.status === 409);
+  assert.equal(M.get(e, "/api/canais", AGORA).canais[0].n_videos, 1);
+});
+
+test("estúdio novo: tudo zerado e as telas não quebram", () => {
+  const e = { ...Semente.vazio(AGORA), modelos: MODELOS, plataformas: PLATAFORMAS, conexao: { ...CONEXAO } };
+  const r = M.get(e, "/api/resumo", AGORA);
+  assert.equal(r.canais_total, 0);
+  assert.equal(r.kpis.esperando, 0);
+  assert.deepEqual(r.precisa, []);
+  for (const caminho of ["/api/fila?aba=fila", "/api/producao", "/api/series", "/api/dinheiro", "/api/config", "/api/saude",
+    "/api/plataformas", "/api/publicar?aba=pendentes"]) {
+    assert.ok(M.get(e, caminho, AGORA), caminho);
+  }
+  const telaCanais = M.get(e, "/api/canais", AGORA);
+  assert.deepEqual(telaCanais.canais, []);
+  assert.deepEqual(telaCanais.modelos.map((m) => m.id), ["biblico-manhwa", "curiosidades"]);
+  assert.throws(() => M.post(e, "/api/videos", { canal: "curiosidades", titulo: "abc" }, AGORA), (err) => err.status === 422);
+  // primeiro canal a partir do modelo, e o primeiro vídeo já entra na fila
+  const { slug } = postar(e, "/api/canais", { ...FORM_CANAL, nome: "Curiosidades", modelo: "curiosidades" });
+  const { id } = postar(e, "/api/videos", { canal: slug, titulo: "Primeiro vídeo", duracao: 65 });
+  assert.equal(M.get(e, "/api/resumo", AGORA).kpis.esperando, 1);
+  assert.equal(e.videos[id].canal, "curiosidades");
+});
+
+test("dono da plataforma: cadastro e pausa de estúdio", () => {
+  const e = comExemplo();
+  assert.throws(() => M.get(e, "/api/plataforma", AGORA), (err) => err.status === 403);
+  assert.throws(() => M.post(e, "/api/plataforma/acesso", { aberto: true }, AGORA), (err) => err.status === 403);
+  e.conexao.admin = true;
+  const tela = M.get(e, "/api/plataforma", AGORA);
+  assert.equal(tela.aberto, false);
+  assert.deepEqual(tela.estudios.map((s) => [s.uid, s.voce]), [["demo", true], ["convidada", false]]);
+
+  const r = postar(e, "/api/plataforma/acesso", { aberto: false, convidados: "Ana@Gmail.com, bia@exemplo.com.br\nana@gmail.com" });
+  assert.deepEqual(r.convidados, ["ana@gmail.com", "bia@exemplo.com.br"]);
+  assert.throws(() => M.post(e, "/api/plataforma/acesso", { convidados: "sem-arroba" }, AGORA), (err) => /sem-arroba/.test(err.dados.erros.convidados));
+  assert.throws(() => M.post(e, "/api/plataforma/acesso", { convidados: "<x>@a.com" }, AGORA), (err) => err.status === 422);
+
+  postar(e, "/api/plataforma/estudios/convidada/ativo", { ativo: false });
+  assert.equal(e.estudios.convidada.ativo, false);
+  assert.throws(() => M.post(e, "/api/plataforma/estudios/demo/ativo", { ativo: false }, AGORA), (err) => err.status === 409);
+  assert.throws(() => M.post(e, "/api/plataforma/estudios/ninguem/ativo", { ativo: false }, AGORA), (err) => err.status === 404);
 });
 
 test("todas as telas respondem com os dados de exemplo", () => {
@@ -169,13 +283,24 @@ test("todas as telas respondem com os dados de exemplo", () => {
   assert.throws(() => M.post(e, "/login", {}, AGORA), (err) => err.status === 404);
 });
 
-test("arquivos fixos: canais apontam para plataformas que existem", () => {
+test("arquivos fixos: modelos apontam para plataformas que existem", () => {
   const ids = new Set(PLATAFORMAS.plataformas.map((p) => p.id));
-  for (const c of Object.values(CANAIS)) {
-    for (const p of c.plataformas) assert.ok(ids.has(p), `${c.slug}: ${p}`);
-    assert.deepEqual(c.formato.short_segundos, [61, 80]);
+  for (const m of MODELOS) {
+    assert.match(m.id, /^[a-z0-9][a-z0-9-]{0,40}$/);
+    for (const p of m.plataformas) assert.ok(ids.has(p), `${m.id}: ${p}`);
+    assert.deepEqual(m.formato.short_segundos, [61, 80]);
+    assert.ok(m.horarios.every((h) => /^([01]\d|2[0-3]):[0-5]\d$/.test(h)), m.id);
   }
   for (const p of PLATAFORMAS.plataformas) {
     for (const url of Object.values(p.urls)) assert.ok(!url || M.hostAceito(url, p.dominios), `${p.id}: ${url}`);
   }
+});
+
+test("dono da plataforma: o mesmo e-mail no config.js e nas regras do Firestore", () => {
+  const config = fs.readFileSync(path.join(raiz, "web/config.js"), "utf8");
+  const regras = fs.readFileSync(path.join(raiz, "firestore.rules"), "utf8");
+  const admin = /admin:\s*"([^"]+)"/.exec(config);
+  assert.ok(admin, "web/config.js precisa de admin");
+  assert.match(regras, new RegExp(`email\\(\\) == '${admin[1].replace(/\./g, "\\.")}'`));
+  assert.doesNotMatch(regras, /match \/(videos|contas|acoes)\//, "nada de coleção solta fora de estudios/{uid}");
 });

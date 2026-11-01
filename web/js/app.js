@@ -14,8 +14,9 @@ const TITULOS = {
   mais: "Mais ferramentas",
   config: "Configurações",
   saude: "Mais › Saúde do sistema",
+  admin: "Mais › Plataforma",
 };
-const DO_MAIS = new Set(["saude"]);
+const DO_MAIS = new Set(["saude", "admin"]);
 const ABAS = ["fila", "prontos", "reprovados", "agendados"];
 const tela = document.getElementById("tela");
 const estado = {
@@ -28,6 +29,8 @@ const estado = {
   inicioRevisao: new Map(),
   legendas: new Map(),
   mensagem: null,
+  levar: null,
+  modelos: [],
 };
 const ABAS_PLAT = ["publicar", "feitos", "contas"];
 const SITUACAO_PUB = { pendente: ["espera", "Pendente"], publicado: ["ok", "Publicado"], pulado: ["espera", "Pulado"] };
@@ -161,8 +164,9 @@ function lerRota() {
   } catch {
     bruto = "";
   }
-  const [rota, param = ""] = bruto.split("/");
-  return Object.hasOwn(TITULOS, rota) ? { rota, param } : { rota: "inicio", param: "" };
+  // "#canais/editar/biblico" -> rota "canais", param "editar/biblico"
+  const [rota, ...resto] = bruto.split("/");
+  return Object.hasOwn(TITULOS, rota) ? { rota, param: resto.join("/") } : { rota: "inicio", param: "" };
 }
 
 function marcarTrilho(rota) {
@@ -195,7 +199,8 @@ async function navegar(comEsqueleto = true) {
     estado.recentes.clear();
     estado.refazendo = null;
     estado.formSujo = false;
-    estado.mensagem = null;
+    estado.mensagem = estado.levar; // recado deixado pela tela anterior (ex.: "Canal criado")
+    estado.levar = null;
   }
   if (rota !== estado.rota) marcarTrilho(rota);
   estado.rota = rota;
@@ -231,6 +236,7 @@ const TELAS = {
   async inicio() {
     const r = await api("/api/resumo");
     atualizarCabecalho(r);
+    if (r.canais_total === 0) return boasVindas(await api("/api/canais"));
     const k = r.kpis;
     const porCanal = k.por_canal.length
       ? k.por_canal.map((c) => `${c.n} de ${esc(c.nome)}`).join(", ")
@@ -297,6 +303,16 @@ const TELAS = {
       ? p.eventos.map((e) => `<div><span class="h">${esc(fmtData(e.ts, { hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</span><span class="${esc(e.nivel)}">${esc(e.etapa)}</span><span class="alvo">${esc(e.alvo)}</span><span class="${esc(e.nivel)}">${esc(e.msg)}</span></div>`).join("")
       : "<div>Sem eventos ainda.</div>";
     const msg = estado.mensagem ? `<p class="mg-chip mg-c-ok mg-mt" role="status">${esc(estado.mensagem)}</p>` : "";
+    const semCanal = `
+        <div class="mg-card mg-in mg-vazio">
+          <p class="mg-h2">${c.canais.length ? "Todos os canais estão pausados" : "Crie um canal primeiro"}</p>
+          <p class="mg-sub">${c.canais.length ? "Ligue um canal para adicionar vídeos e gerar lotes." : "Os vídeos entram sempre em um canal do seu estúdio."}</p>
+          <a class="mg-btn mg-pri mg-mt" href="#canais${c.canais.length ? "" : "/novo"}">${c.canais.length ? "Abrir Canais" : "Criar canal"}</a>
+        </div>`;
+    if (!opcoes) {
+      return `<section class="mg-split mg-split-inv"><div>${semCanal}</div>
+        <div class="mg-card mg-in"><h2 class="mg-h2">Em produção agora</h2>${videos}</div></section>`;
+    }
     return `
       <section class="mg-split mg-split-inv">
        <div>
@@ -338,8 +354,22 @@ const TELAS = {
       </section>`;
   },
 
-  async canais() {
+  async canais(param) {
     const d = await api("/api/canais");
+    const [modo, alvo = ""] = param.split("/");
+    const editando = modo === "editar" ? d.canais.find((c) => c.id === alvo) : null;
+    const msg = estado.mensagem ? `<p class="mg-chip mg-c-ok" role="status">${esc(estado.mensagem)}</p>` : "";
+    if (modo === "novo" && d.canais.length >= d.limite) {
+      return `<div class="mg-card mg-vazio"><p class="mg-h2">Limite de ${d.limite} canais</p>
+        <p class="mg-sub">Apague ou reaproveite um canal antes de criar outro.</p><a class="mg-btn mg-sec mg-mt" href="#canais">Voltar</a></div>`;
+    }
+    if (modo === "novo" || editando) return formCanal(d, editando, modo === "novo" ? alvo : "");
+    if (!d.canais.length) {
+      return `
+        <div class="mg-card mg-in mg-vazio"><p class="mg-h2">Nenhum canal ainda</p>
+          <p class="mg-sub">Crie o primeiro canal a partir de um modelo ou em branco.</p><div aria-live="polite">${msg}</div></div>
+        <section class="mg-g3 mg-mt" aria-label="Modelos de canal">${escolhaDeModelo(d)}</section>`;
+    }
     const cards = d.canais.map((c, i) => {
       const ypp = c.ypp;
       const pctInscritos = ypp.inscritos ? (ypp.inscritos / ypp.inscritos_meta) * 100 : 0;
@@ -348,10 +378,11 @@ const TELAS = {
         <article class="mg-card mg-in" data-id="${esc(c.id)}" data-atraso="${50 + i * 50}">
           <div class="mg-entre">
             <h2 class="mg-h2 mg-com-ponto"><span class="mg-ponto" data-cor="${esc(c.cor)}"></span>${esc(c.nome)}</h2>
-            <button type="button" class="mg-switch" role="switch" aria-checked="${c.ligado}" aria-label="Publicação do canal ${esc(c.nome)}" data-acao="ligar" ${c.permitido ? "" : "disabled"}></button>
+            <button type="button" class="mg-switch" role="switch" aria-checked="${c.ligado}" aria-label="Publicação do canal ${esc(c.nome)}" data-acao="ligar"></button>
           </div>
           <p class="mg-sub">${esc(c.descricao)}</p>
-          <p class="mg-mt">${c.permitido ? chip(c.ligado ? "ok" : "espera", c.ligado ? "Ligado, produzindo" : "Pausado, nada será gerado") : chip("espera", "Desligado em dados/canais.json (enabled: false)")}</p>
+          <p class="mg-mt">${chip(c.ligado ? "ok" : "espera", c.ligado ? "Ligado, produzindo" : "Pausado, nada será gerado")}</p>
+          <p class="mg-sub mg-mt">Publica às ${esc(c.horarios.join(", ") || "—")} · ${plural(c.plataformas.length, "rede", "redes")} · ${esc(c.duracao[0])} a ${esc(c.duracao[1])} s</p>
           <dl class="mg-dados">
             <div><dt>Inscritos no YouTube</dt><dd>${fmtNum(c.inscritos)}</dd></div>
             <div><dt>Seguidores no TikTok</dt><dd>${fmtNum(c.seguidores_tiktok)}</dd></div>
@@ -368,12 +399,20 @@ const TELAS = {
             ${barra(pctViews, c.cor)}
           </div>
           <p class="mg-sub mg-mt">Próxima publicação: <b>${c.proxima ? fmtHorario(c.proxima) : "nada agendado"}</b></p>
+          <div class="mg-acoes mg-mt"><a class="mg-btn mg-sec mg-sm" href="#canais/editar/${encodeURIComponent(c.id)}">Editar canal</a></div>
           <p class="mg-erro" aria-live="polite"></p>
         </article>`;
     }).join("");
+    const novo = d.canais.length < d.limite
+      ? '<a class="mg-btn mg-pri" href="#canais/novo">Novo canal</a>'
+      : `<span class="mg-sub">Limite de ${d.limite} canais</span>`;
     return `
-      ${pecaGatilho(d.gatilho, "Gatilho para abrir o próximo canal")}
-      <section class="mg-g3 mg-mt" aria-label="Canais">${cards}</section>`;
+      <div class="mg-card mg-in mg-barra-abas">
+        <div class="mg-entre"><p class="mg-sub">${plural(d.canais.length, "canal", "canais")} neste estúdio. Cada um tem horários, redes e contas próprios.</p>${novo}</div>
+        <div aria-live="polite">${msg}</div>
+      </div>
+      <section class="mg-g3 mg-mt" aria-label="Canais">${cards}</section>
+      <div class="mg-mt">${pecaGatilho(d.gatilho, "Gatilho para abrir o próximo canal")}</div>`;
   },
 
   async series() {
@@ -494,14 +533,15 @@ const TELAS = {
         </form>
         <div class="mg-card mg-in" data-atraso="50">
           <h2 class="mg-h2">Conexão</h2>
-          <p class="mg-sub">${c.modo === "firebase" ? "Dados no Firebase, só para a sua conta Google." : "Modo demonstração: os dados ficam só neste navegador."}</p>
+          <p class="mg-sub">${c.modo === "firebase" ? "Seu estúdio fica no Firebase, separado dos estúdios das outras contas." : "Modo demonstração: os dados ficam só neste navegador."}</p>
           <dl class="mg-dados">
             <div><dt>Modo</dt><dd class="mg-pequeno">${c.modo === "firebase" ? "Firebase" : "Demonstração"}</dd></div>
             <div><dt>Projeto</dt><dd class="mg-pequeno">${esc(c.projeto || "—")}</dd></div>
             <div><dt>Conta</dt><dd class="mg-pequeno">${esc(c.email || "—")}</dd></div>
+            <div><dt>Papel</dt><dd class="mg-pequeno">${c.admin ? "Dono da plataforma" : "Dono do próprio estúdio"}</dd></div>
             <div><dt>Produção automática</dt><dd class="mg-pequeno">${c.funcoes ? "Cloud Functions ligadas" : "Ainda não (functions/)"}</dd></div>
           </dl>
-          <p class="mg-sub mg-mt">Para trocar o projeto, edite web/config.js e publique de novo (firebase deploy).</p>
+          <p class="mg-sub mg-mt">Atualizações do painel chegam para todos os estúdios ao mesmo tempo, no próximo carregamento da página.</p>
         </div>
       </section>`;
   },
@@ -511,6 +551,7 @@ const TELAS = {
     const itens = [
       ["Banco", s.modo === "firebase" ? "ok" : "at", s.modo === "firebase" ? `Firebase: ${s.projeto}` : "Demonstração: dados só neste navegador"],
       ["Login", s.email ? "ok" : "at", s.email || "sem login (demonstração)"],
+      ["Canais", s.canais ? "ok" : "at", s.canais ? plural(s.canais, "canal criado", "canais criados") : "nenhum canal: crie o primeiro em Canais"],
       ["Produção automática", s.funcoes ? "ok" : "at", s.funcoes ? "Cloud Functions ligadas" : "Ainda não instalada (pasta functions/)"],
       ["Regras das plataformas", s.plataformas_dias > 90 ? "at" : "ok", `conferidas há ${s.plataformas_dias} dias`],
       ["Erros em 24 h", s.erros_24h ? "at" : "ok", plural(s.erros_24h, "erro", "erros")],
@@ -540,7 +581,7 @@ const TELAS = {
       ["#plataformas/contas", "Contas e programas", "YouTube, TikTok, Facebook, Instagram, Kwai e Snapchat"],
       ["#config", "Configurações", "Teto, preços, câmbio e créditos"],
       ["#saude", "Saúde do sistema", "Firebase, login e produção automática"],
-      ["#canais", "Canais", "Liga/desliga e gatilho do próximo canal"],
+      ["#canais", "Canais", "Criar, editar, ligar e desligar canais"],
       ["#series", "Séries", "Temporadas e personagens"],
       ["#dinheiro", "Dinheiro", "Caixa do mês e custos de IA"],
     ];
@@ -550,16 +591,55 @@ const TELAS = {
       ["Pautas", "Ideias com nota e similaridade"],
       ["Comentários", "YouTube e TikTok num lugar só"],
     ];
+    if (window.FONTE.admin) ATALHOS.push(["#admin", "Plataforma", "Cadastro de novas contas e estúdios (só você vê)"]);
     const grupo = (titulo, cards) => `<h2 class="mg-h2 mg-mt">${titulo}</h2><div class="mg-g3 mg-mt">${cards}</div>`;
     const demo = window.FONTE.modo === "demo"
       ? `<h2 class="mg-h2 mg-mt">Demonstração</h2>
-         <div class="mg-card mg-mt"><p class="mg-sub">Os dados de exemplo ficam só neste navegador. Para usar de verdade, ligue o Firebase (README).</p>
-         <button type="button" class="mg-btn mg-sec mg-mt" data-acao="restaurar-exemplo">Restaurar dados de exemplo</button></div>`
+         <div class="mg-card mg-mt"><p class="mg-sub">Os dados de exemplo ficam só neste navegador. "Estúdio vazio" mostra o que uma conta nova vê no primeiro acesso.</p>
+         <div class="mg-acoes mg-mt"><button type="button" class="mg-btn mg-sec" data-acao="restaurar-exemplo">Restaurar dados de exemplo</button>
+         <button type="button" class="mg-btn mg-sec" data-acao="estudio-vazio">Começar com estúdio vazio</button></div></div>`
       : "";
     return grupo("Ferramentas", ATALHOS.map(([href, nome, desc]) => `
         <a class="mg-card mg-atalho" href="${href}"><p class="mg-forte">${nome}</p><p class="mg-sub">${desc}</p></a>`).join("")) + demo
       + grupo("Em breve", EM_BREVE.map(([nome, desc]) => `
         <div class="mg-card mg-atalho mg-desabilitado" aria-disabled="true"><p class="mg-forte">${nome} ${chip("espera", "em breve")}</p><p class="mg-sub">${desc}</p></div>`).join(""));
+  },
+
+  async admin() {
+    const d = await api("/api/plataforma");
+    const msg = estado.mensagem ? `<p class="mg-chip mg-c-ok mg-mt" role="status">${esc(estado.mensagem)}</p>` : "";
+    const linhas = d.estudios.map((s) => `
+      <tr data-id="${esc(s.uid)}">
+        <td><b>${esc(s.email || "—")}</b>${s.nome ? `<br><span class="mg-sub">${esc(s.nome)}</span>` : ""}</td>
+        <td>${esc(fmtData(s.criado_em, { day: "2-digit", month: "2-digit", year: "numeric" }))}</td>
+        <td>${s.voce ? chip("in", "Você") : chip(s.ativo ? "ok" : "espera", s.ativo ? "Ativo" : "Pausado")}</td>
+        <td class="r">${s.voce ? "" : `<button type="button" class="mg-btn mg-sec mg-sm" data-acao="estudio-ativo" data-ativo="${!s.ativo}">${s.ativo ? "Pausar" : "Reativar"}</button>`}</td>
+      </tr>`).join("");
+    return `
+      <section class="mg-split">
+        <form class="mg-card mg-in" data-form="acesso" novalidate>
+          <h2 class="mg-h2">Cadastro de novas contas</h2>
+          <p class="mg-sub">Quem entra com Google pela primeira vez ganha um estúdio vazio, se o cadastro deixar. Quem já tem estúdio continua entrando.</p>
+          <div class="mg-campo"><label for="p-aberto">Quem pode criar estúdio</label>
+            <select class="mg-input" id="p-aberto" name="aberto">
+              <option value="nao"${d.aberto ? "" : " selected"}>Só os convidados abaixo (recomendado)</option>
+              <option value="sim"${d.aberto ? " selected" : ""}>Qualquer conta Google</option>
+            </select></div>
+          <div class="mg-campo"><label for="p-convidados">Convidados (um e-mail por linha)</label>
+            <textarea class="mg-input" id="p-convidados" name="convidados" maxlength="20000" aria-describedby="e-convidados" placeholder="amiga@gmail.com">${esc(d.convidados.join("\n"))}</textarea>
+            <p class="mg-erro" id="e-convidados"></p></div>
+          <p class="mg-sub">Aberto para todos, qualquer pessoa gasta a cota grátis do Firebase do projeto. Abra só quando quiser divulgar.</p>
+          <button type="submit" class="mg-btn mg-pri mg-mt">Salvar cadastro</button>
+          <div aria-live="polite">${msg}</div>
+        </form>
+        <div class="mg-card mg-in" data-atraso="50">
+          <h2 class="mg-h2">Estúdios</h2>
+          <p class="mg-sub">${plural(d.estudios.length, "estúdio", "estúdios")}. Você vê só quem é e se está ativo; vídeos, canais e contas de cada um são privados.</p>
+          <div class="mg-rolar mg-mt"><table class="mg-tabela"><thead><tr><th>Conta</th><th>Desde</th><th>Situação</th><th class="r">Ação</th></tr></thead>
+            <tbody>${linhas || '<tr><td colspan="4" class="mg-sub">Nenhum estúdio ainda.</td></tr>'}</tbody></table></div>
+          <p class="mg-erro" aria-live="polite"></p>
+        </div>
+      </section>`;
   },
 
   async plataformas(param) {
@@ -580,6 +660,102 @@ const TELAS = {
       + `<section class="mg-g2 mg-mt" aria-label="Vídeos para publicar">${d.itens.map(cartaoPublicar).join("")}</section>`;
   },
 };
+
+/* ------------------------------------------------------------------ canais */
+
+/** Atalhos "comece por um modelo" (usados no primeiro acesso e na tela Canais sem canais). */
+function escolhaDeModelo(d) {
+  const cartoes = d.modelos.map((m) => `
+    <a class="mg-card mg-atalho" href="#canais/novo/${encodeURIComponent(m.id)}">
+      <p class="mg-forte mg-com-ponto"><span class="mg-ponto" data-cor="${esc(m.cor)}"></span>${esc(m.nome)}</p>
+      <p class="mg-sub">${esc(m.descricao)}</p>
+      <p class="mg-sub">Roteiro, estilo visual e horários já prontos</p>
+    </a>`).join("");
+  return `${cartoes}
+    <a class="mg-card mg-atalho" href="#canais/novo">
+      <p class="mg-forte">Em branco</p>
+      <p class="mg-sub">Você escolhe nome, cor, horários e redes do zero</p>
+    </a>`;
+}
+
+function boasVindas(d) {
+  return `
+    <section class="mg-card mg-in">
+      <h2 class="mg-h2 mg-grande">Seu estúdio está pronto</h2>
+      <p class="mg-sub">Ele é só seu: canais, fila, contas e números ficam separados das outras contas da plataforma.</p>
+      <ol class="mg-passos mg-mt">
+        <li><b>Crie o primeiro canal.</b> Comece por um modelo abaixo ou em branco.</li>
+        <li><b>Cadastre as contas</b> do canal em Plataformas › Contas e programas (só usuário e link; senha nunca entra aqui).</li>
+        <li><b>Adicione um vídeo</b> em Produção, aprove na fila e publique em cada rede.</li>
+      </ol>
+    </section>
+    <h2 class="mg-h2 mg-mt">Começar por um modelo</h2>
+    <section class="mg-g3 mg-mt" aria-label="Modelos de canal">${escolhaDeModelo(d)}</section>`;
+}
+
+/** Formulário de criar (canal = null) ou editar canal. */
+function formCanal(d, canal, modeloId) {
+  const modelo = canal ? null : d.modelos.find((m) => m.id === modeloId) || null;
+  const base = canal || modelo || { nome: "", cor: "#389E92", descricao: "", horarios: ["12:00"], plataformas: d.plataformas.map((p) => p.id), duracao: [61, 80] };
+  const horarios = [0, 1, 2].map((i) => `
+    <input class="mg-input" type="time" name="horarios" value="${esc(base.horarios[i] || "")}" aria-label="Horário ${i + 1}"${i ? "" : ' aria-describedby="e-horarios"'}>`).join("");
+  const redes = d.plataformas.map((p) => `
+    <label class="mg-check"><input type="checkbox" name="plataformas" value="${esc(p.id)}"${base.plataformas.includes(p.id) ? " checked" : ""}>
+      <span class="mg-ponto" data-cor="${esc(p.cor)}"></span>${esc(p.nome)}</label>`).join("");
+  const opcoesModelo = [["", "Em branco"], ...d.modelos.map((m) => [m.id, m.nome])]
+    .map(([id, nome]) => `<option value="${esc(id)}"${id === (modelo ? modelo.id : "") ? " selected" : ""}>${esc(nome)}</option>`).join("");
+  const [faixaMin, faixaMax] = d.duracao_faixa;
+  const apagar = canal
+    ? `<div class="mg-bloco">
+        <p class="mg-forte">Apagar canal</p>
+        <p class="mg-sub">${canal.n_videos
+          ? `Este canal tem ${plural(canal.n_videos, "vídeo", "vídeos")}. Para parar de produzir, use o botão liga/desliga do canal.`
+          : "O canal some do painel junto com as contas cadastradas nele. Não dá para desfazer."}</p>
+        <button type="button" class="mg-btn mg-sec mg-perigo mg-mt" data-acao="apagar-canal"${canal.n_videos ? " disabled" : ""}>Apagar canal</button>
+      </div>`
+    : "";
+  return `
+    <form class="mg-card mg-in" data-form="canal" data-id="${esc(canal ? canal.id : "")}" aria-labelledby="t-canal" novalidate>
+      <h2 class="mg-h2" id="t-canal">${canal ? `Editar ${esc(canal.nome)}` : "Novo canal"}</h2>
+      <p class="mg-sub">${canal ? "O endereço interno do canal não muda; o resto você ajusta quando quiser." : "O canal entra ligado. Depois, cadastre as contas dele em Plataformas."}</p>
+      ${canal ? "" : `<div class="mg-campo"><label for="k-modelo">Começar de</label>
+        <select class="mg-input" id="k-modelo" name="modelo" data-modelo>${opcoesModelo}</select>
+        <p class="mg-sub">O modelo traz instruções de roteiro, estilo visual e personagens. Trocar aqui recomeça o formulário.</p></div>`}
+      <div class="mg-g2">
+        <div class="mg-campo"><label for="k-nome">Nome do canal</label>
+          <input class="mg-input" id="k-nome" name="nome" maxlength="40" required value="${esc(base.nome)}" aria-describedby="e-nome"><p class="mg-erro" id="e-nome"></p></div>
+        <div class="mg-campo"><label for="k-cor">Cor no painel</label>
+          <input class="mg-input mg-cor" id="k-cor" name="cor" type="color" value="${esc(base.cor)}" aria-describedby="e-cor"><p class="mg-erro" id="e-cor"></p></div>
+      </div>
+      <div class="mg-campo"><label for="k-descricao">Descrição (opcional)</label>
+        <input class="mg-input" id="k-descricao" name="descricao" maxlength="160" value="${esc(base.descricao)}" placeholder="Do que o canal fala, em uma linha" aria-describedby="e-descricao"><p class="mg-erro" id="e-descricao"></p></div>
+      <fieldset class="mg-campo mg-grupo">
+        <legend class="mg-legend">Horários de publicação (Brasília)</legend>
+        <div class="mg-g3">${horarios}</div>
+        <p class="mg-sub">De 1 a 3 por dia. Aprovar um vídeo agenda no próximo horário livre.</p>
+        <p class="mg-erro" id="e-horarios"></p>
+      </fieldset>
+      <fieldset class="mg-campo mg-grupo">
+        <legend class="mg-legend">Onde publicar</legend>
+        <div class="mg-checks">${redes}</div>
+        <p class="mg-erro" id="e-plataformas"></p>
+      </fieldset>
+      <div class="mg-g2">
+        <div class="mg-campo"><label for="k-dmin">Duração mínima (s)</label>
+          <input class="mg-input" id="k-dmin" name="duracao_min" type="number" min="${faixaMin}" max="${faixaMax}" inputmode="numeric" value="${esc(base.duracao[0])}" aria-describedby="e-duracao_min"></div>
+        <div class="mg-campo"><label for="k-dmax">Duração máxima (s)</label>
+          <input class="mg-input" id="k-dmax" name="duracao_max" type="number" min="${faixaMin}" max="${faixaMax}" inputmode="numeric" value="${esc(base.duracao[1])}"></div>
+      </div>
+      <p class="mg-erro" id="e-duracao_min"></p>
+      <p class="mg-sub">61 a 80 s rende em todas as redes: o TikTok só paga vídeos com 1 min ou mais, e o Reels pela API vai até 90 s.</p>
+      <div class="mg-acoes mg-mt">
+        <button type="submit" class="mg-btn mg-pri">${canal ? "Salvar canal" : "Criar canal"}</button>
+        <a class="mg-btn mg-ghost" href="#canais">Cancelar</a>
+      </div>
+      <p class="mg-erro mg-mt" id="e-geral" aria-live="polite"></p>
+      ${apagar}
+    </form>`;
+}
 
 /* ------------------------------------------------------------------ plataformas */
 
@@ -669,7 +845,7 @@ function linhaPublicacao(v, p) {
 
 function telaContas(d) {
   const aviso = d.revisar
-    ? `<p class="mg-aviso mg-c-at mg-mt">Os dados das plataformas foram conferidos há ${d.dias} dias. As regras mudam: revise o arquivo plataformas.yaml.</p>`
+    ? `<p class="mg-aviso mg-c-at mg-mt">Os dados das plataformas foram conferidos há ${d.dias} dias. As regras mudam: revise o arquivo web/dados/plataformas.json.</p>`
     : `<p class="mg-sub mg-mt">Programas e requisitos conferidos nas páginas oficiais em ${esc(fmtData(`${d.verificado_em}T12:00:00`, { day: "2-digit", month: "2-digit", year: "numeric" }))}.</p>`;
   const opcoes = (atual) => d.situacoes
     .map((s) => `<option value="${esc(s)}"${s === atual ? " selected" : ""}>${esc(SITUACAO_CONTA[s] || s)}</option>`).join("");
@@ -683,7 +859,7 @@ function telaContas(d) {
     ].join("");
     const contas = p.contas.length
       ? p.contas.map((c) => formConta(p, c, opcoes)).join("")
-      : '<p class="mg-sub mg-bloco">Nenhum canal publica aqui. Adicione o id em "plataformas" do canal, em dados/canais.json.</p>';
+      : '<p class="mg-sub mg-bloco">Nenhum canal publica aqui. Marque esta rede em Canais › Editar canal.</p>';
     const riscos = p.riscos.map((r) => `<li>${esc(r)}</li>`).join("");
     const fontes = p.fontes.map((f) => `<li>${linkExterno(f, f.replace(/^https:\/\//, ""), "mg-link")}</li>`).join("");
     return `
@@ -1002,10 +1178,54 @@ const ACOES = {
   },
   "restaurar-exemplo": async (b) => {
     const soltar = ocupar(b, "Restaurando…");
-    await window.FONTE.restaurarExemplo();
+    await window.FONTE.restaurarExemplo(false);
     soltar();
     location.hash = "#inicio";
     navegar();
+  },
+  "estudio-vazio": async (b) => {
+    const soltar = ocupar(b, "Zerando…");
+    await window.FONTE.restaurarExemplo(true);
+    soltar();
+    location.hash = "#inicio";
+    navegar();
+  },
+  "apagar-canal": async (b, id) => {
+    // dois cliques: o primeiro só pede confirmação
+    if (b.dataset.confirmar !== "sim") {
+      b.dataset.confirmar = "sim";
+      b.textContent = "Clique de novo para apagar";
+      setTimeout(() => {
+        if (b.isConnected && !b.disabled) {
+          b.dataset.confirmar = "";
+          b.textContent = "Apagar canal";
+        }
+      }, 6000);
+      return;
+    }
+    const soltar = ocupar(b, "Apagando…");
+    try {
+      await enviar(`/api/canais/${encodeURIComponent(id)}/apagar`);
+      estado.formSujo = false;
+      estado.levar = "Canal apagado.";
+      location.hash = "#canais";
+      recarregarCabecalho();
+    } catch (erro) {
+      soltar();
+      b.dataset.confirmar = "";
+      tela.querySelector("#e-geral").textContent = erro.message;
+    }
+  },
+  "estudio-ativo": async (b, id) => {
+    const soltar = ocupar(b, "Salvando…");
+    try {
+      await enviar(`/api/plataforma/estudios/${encodeURIComponent(id)}/ativo`, { ativo: b.dataset.ativo === "true" });
+      await navegar(false);
+    } catch (erro) {
+      soltar();
+      const p = b.closest(".mg-card").querySelector(".mg-erro");
+      if (p) p.textContent = erro.message;
+    }
   },
   "pular-pub": (b, id) => marcarPublicacao(b, id, "pulado"),
   "desfazer-pub": (b, id) => marcarPublicacao(b, id, "pendente"),
@@ -1134,6 +1354,53 @@ const FORMULARIOS = {
       erro.textContent = e.message;
     }
   },
+  async canal(form) {
+    const fd = new FormData(form);
+    const corpo = {
+      modelo: fd.get("modelo") || "",
+      nome: String(fd.get("nome") || "").trim(),
+      cor: fd.get("cor"),
+      descricao: String(fd.get("descricao") || "").trim(),
+      horarios: fd.getAll("horarios").filter(Boolean),
+      plataformas: fd.getAll("plataformas"),
+      duracao_min: Number(fd.get("duracao_min")),
+      duracao_max: Number(fd.get("duracao_max")),
+    };
+    if (corpo.nome.length < 2) {
+      marcarErros(form, { nome: "Escreva o nome do canal (mínimo 2 letras)." });
+      return;
+    }
+    const slug = form.dataset.id;
+    const geral = form.querySelector("#e-geral");
+    geral.textContent = "";
+    const soltar = ocupar(form.querySelector('[type="submit"]'), slug ? "Salvando…" : "Criando…");
+    try {
+      const r = await enviar(slug ? `/api/canais/${encodeURIComponent(slug)}` : "/api/canais", corpo);
+      estado.formSujo = false;
+      estado.levar = slug
+        ? `${r.nome}: alterações salvas.`
+        : `Canal ${r.nome} criado e ligado. Próximo passo: cadastre as contas dele em Plataformas › Contas e programas.`;
+      location.hash = "#canais";
+      recarregarCabecalho();
+    } catch (erro) {
+      soltar();
+      const erros = erro.dados && erro.dados.erros;
+      if (erros) marcarErros(form, erros);
+      else geral.textContent = erro.message;
+    }
+  },
+  async acesso(form) {
+    const soltar = ocupar(form.querySelector('[type="submit"]'), "Salvando…");
+    try {
+      await enviar("/api/plataforma/acesso", { aberto: form.elements.aberto.value === "sim", convidados: form.elements.convidados.value });
+      estado.formSujo = false;
+      estado.mensagem = "Cadastro salvo.";
+      await navegar(false);
+    } catch (erro) {
+      soltar();
+      marcarErros(form, erro.dados && erro.dados.erros ? erro.dados.erros : { convidados: erro.message });
+    }
+  },
   async aipro(form) {
     const soltar = ocupar(form.querySelector('[type="submit"]'), "Salvando…");
     try {
@@ -1169,6 +1436,13 @@ tela.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const tratador = FORMULARIOS[form.dataset.form];
   if (tratador) tratador(form);
+});
+
+/* "Começar de" no formulário de canal: recomeça o formulário com o modelo escolhido */
+tela.addEventListener("change", (ev) => {
+  if (!ev.target.matches("[data-modelo]")) return;
+  const id = ev.target.value;
+  location.hash = `#canais/novo${id ? `/${encodeURIComponent(id)}` : ""}`;
 });
 
 tela.addEventListener("input", (ev) => {

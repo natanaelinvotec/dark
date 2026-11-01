@@ -1,12 +1,10 @@
 [
   {
-    "slug": "biblico-manhwa",
+    "id": "biblico-manhwa",
     "nome": "Bíblico",
     "cor": "#2563C9",
-    "enabled": true,
     "idioma": "pt-BR",
     "descricao": "Histórias bíblicas em manhwa com janelas de missão",
-    "pasta": "Canal-Biblico",
     "horarios": [
       "12:00",
       "19:00"
@@ -83,13 +81,11 @@
     "sistema": null
   },
   {
-    "slug": "curiosidades",
+    "id": "curiosidades",
     "nome": "Curiosidades",
     "cor": "#0E9A82",
-    "enabled": true,
     "idioma": "pt-BR",
     "descricao": "Ciência, espaço e história em pouco mais de 1 minuto",
-    "pasta": "Canal-Curiosidades",
     "horarios": [
       "12:00",
       "18:30"

@@ -1,24 +1,26 @@
-# Tarefas — Estúdio de Canais (versão Firebase)
+# Tarefas — Estúdio de Canais (plataforma multi-estúdio)
 
 > Spec: `SPEC.md` · Estratégia: `tasks/plan.md`
 > Legenda: [x] feito e verificado · [~] feito, falta conferir no Firebase de verdade · [ ] a fazer
 
-## Feito (31/10/2026)
-- [x] Painel no Firebase: `web/` com motor no navegador, Firestore + login Google, modo demonstração.
-- [x] Adicionar vídeo pronto (link do Drive) → aprovação → publicação assistida nas 6 redes.
-- [x] Contas e metas dos programas; dinheiro; séries; gatilho; configurações.
-- [x] 11 testes do motor (`node --test`) e todas as telas testadas num navegador em modo demonstração.
-- [~] `firestore.rules` só para o dono; cabeçalhos de segurança no `firebase.json`.
+## Feito
+- [x] 31/10 · Painel no Firebase: motor no navegador, Firestore + login Google, modo demonstração. No ar em https://estudio-canais.web.app.
+- [x] 31/10 · Adicionar vídeo pronto (Drive) → aprovação → publicação assistida nas 6 redes; contas e metas; dinheiro; séries.
+- [x] 01/11 · **Plataforma multi-estúdio:** cada conta Google com o próprio estúdio (`estudios/{uid}`), criado vazio no primeiro acesso.
+- [x] 01/11 · **Canais criados no painel** (modelo ou em branco), editar, ligar/pausar, apagar sem vídeos; `canais.json` virou `modelos.json`.
+- [x] 01/11 · **Mais › Plataforma** (só o dono): cadastro fechado/aberto, convidados, pausar estúdio.
+- [x] 01/11 · 17 testes do motor; fluxo completo testado no navegador (demonstração).
+- [~] 01/11 · `firestore.rules` com isolamento por estúdio, cadastro e pausa: conferir no simulador de regras depois do deploy.
 
-## Para colocar no ar (você)
-- [ ] Criar o projeto no Firebase, ligar o login Google e o Firestore (README, passos 1–3).
-- [ ] Colar o `firebaseConfig` em `web/config.js` (passo 4) e rodar `firebase deploy` (passo 5).
-- [ ] Criar as contas nas redes (TikTok pessoal, Facebook página/modo profissional, Instagram profissional, Kwai, Snapchat) com passkey/2FA e preencher a aba **Contas**.
+## Para publicar (você)
+- [ ] `git push` e `firebase.cmd deploy` (site + regras novas).
+- [ ] Entrar em https://estudio-canais.web.app, criar o primeiro canal e testar o caminho até a fila.
+- [ ] Para testar com outra pessoa: Mais › Plataforma › convidados → o e-mail dela.
 
 ## Próximas
-- [ ] **Produção automática** em `functions/` (plano Blaze): roteiro (Gemini), checagem, voz, montagem (Cloud Run + FFmpeg), testes. Ver `functions/README.md`.
-- [ ] Coletor de métricas (YouTube Analytics) → `metricas` e `config/geral.metricas`.
-- [ ] Regras do "Sistema" do canal bíblico (decisão do dono) em `dados/canais.json`.
-- [ ] Regra do dono para abrir o 3º canal (hoje o painel só mostra as 4 condições).
+- [ ] **Produção automática** em `functions/` (plano Blaze): roteiro (Gemini), checagem, voz, montagem (Cloud Run + FFmpeg), testes. Ver `functions/README.md`. Decidir como cobrar/limitar por estúdio.
+- [ ] Coletor de métricas (YouTube Analytics) → `estudios/{uid}/metricas`.
+- [ ] Editar instruções de roteiro e personagens do canal pelo painel (hoje vêm do modelo).
+- [ ] Regras do "Sistema" do modelo bíblico em `dados/modelos.json`.
 - [ ] Revisar `dados/plataformas.json` a cada 90 dias (o painel avisa).
 - [ ] Telas sugeridas: calendário, banco de pautas, comentários com resposta aprovada.

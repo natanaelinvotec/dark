@@ -15,8 +15,9 @@ window.ESTUDIO_CONFIG = {
     messagingSenderId: "683350225761",
     appId: "1:683350225761:web:2a6b551784d196f6a54b20",
   },
-  // e-mail que pode entrar (precisa ser o mesmo de firestore.rules)
-  dono: "natanael.invotec@gmail.com",
+  // dono da plataforma: abre/fecha o cadastro e pausa estúdios (o mesmo e-mail de firestore.rules).
+  // Ele NÃO vê os vídeos, canais nem contas dos outros estúdios.
+  admin: "natanael.invotec@gmail.com",
   // true quando a pasta functions/ (produção automática) estiver publicada
   funcoes: false,
 };
