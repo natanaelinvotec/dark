@@ -18,6 +18,11 @@ window.ESTUDIO_CONFIG = {
   // dono da plataforma: abre/fecha o cadastro e pausa estúdios (o mesmo e-mail de firestore.rules).
   // Ele NÃO vê os vídeos, canais nem contas dos outros estúdios.
   admin: "natanael.invotec@gmail.com",
+  // chave de SITE do reCAPTCHA Enterprise usada pelo App Check (pública; não é segredo).
+  // Sem ela, o Roteiro com IA fica desligado.
+  recaptcha: "6LdAcgsuAAAAAIFiurIORhXw1RQzMzArJM0oiwLX",
+  // modelos do Gemini (Firebase AI Logic, plano grátis). A reserva entra quando a cota do principal acaba.
+  ia: { modelo: "gemini-3.8-flash", reserva: "gemini-3.5-flash-lite" },
   // true quando a pasta functions/ (produção automática) estiver publicada
   funcoes: false,
 };

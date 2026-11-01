@@ -11,6 +11,9 @@
 - [x] 01/11 · **Mais › Plataforma** (só o dono): cadastro fechado/aberto, convidados, pausar estúdio.
 - [x] 01/11 · 17 testes do motor; fluxo completo testado no navegador (demonstração).
 - [~] 01/11 · `firestore.rules` com isolamento por estúdio, cadastro e pausa: conferir no simulador de regras depois do deploy.
+- [x] 01/11 · Gemini ativado no projeto (Firebase AI Logic, Gemini Developer API) e App Check com reCAPTCHA Enterprise registrado para o app "painel" (aplicado só ao AI Logic).
+- [x] 01/11 · **Roteiro com IA** (Produção › Roteiro com IA): história num box, prompts de imagem por quadro no outro, que se refazem quando a história muda; bíblia da série com fichas fixas; arco de 50 capítulos; capítulo → "Adicionar vídeo pronto". 23 testes; fluxo completo testado no navegador (demonstração).
+- [~] 01/11 · Gemini de verdade: testar no site publicado depois do deploy (cota grátis, App Check).
 
 ## Para publicar (você)
 - [ ] `git push` e `firebase.cmd deploy` (site + regras novas).
@@ -20,7 +23,7 @@
 ## Próximas
 - [ ] **Produção automática** em `functions/` (plano Blaze): roteiro (Gemini), checagem, voz, montagem (Cloud Run + FFmpeg), testes. Ver `functions/README.md`. Decidir como cobrar/limitar por estúdio.
 - [ ] Coletor de métricas (YouTube Analytics) → `estudios/{uid}/metricas`.
-- [ ] Editar instruções de roteiro e personagens do canal pelo painel (hoje vêm do modelo).
+- [ ] Roteiro: trajes por fase (ex.: Davi pastor → guerreiro → rei) sem reescrever a ficha; apagar série/capítulo; gerar a imagem direto (Nano Banana pelo AI Logic).
 - [ ] Regras do "Sistema" do modelo bíblico em `dados/modelos.json`.
 - [ ] Revisar `dados/plataformas.json` a cada 90 dias (o painel avisa).
 - [ ] Telas sugeridas: calendário, banco de pautas, comentários com resposta aprovada.

@@ -62,12 +62,12 @@ service cloud.firestore {
       // dados do estúdio: só o dono, e só enquanto o estúdio estiver ativo
       match /{colecao}/{id} {
         allow read: if dono(uid) && ativo(uid)
-          && colecao in ['canais', 'videos', 'contas', 'acoes', 'eventos', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+          && colecao in ['canais', 'videos', 'contas', 'acoes', 'eventos', 'custos', 'metricas', 'receitas', 'campanhas', 'config', 'series', 'capitulos'];
         // histórico (ações e eventos) só recebe registros novos: não se edita nem se apaga
         allow create: if dono(uid) && ativo(uid)
-          && colecao in ['canais', 'videos', 'contas', 'acoes', 'eventos', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+          && colecao in ['canais', 'videos', 'contas', 'acoes', 'eventos', 'custos', 'metricas', 'receitas', 'campanhas', 'config', 'series', 'capitulos'];
         allow update, delete: if dono(uid) && ativo(uid)
-          && colecao in ['canais', 'videos', 'contas', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+          && colecao in ['canais', 'videos', 'contas', 'custos', 'metricas', 'receitas', 'campanhas', 'config', 'series', 'capitulos'];
       }
     }
   }

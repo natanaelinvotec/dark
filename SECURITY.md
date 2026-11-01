@@ -30,6 +30,17 @@
   `dominio.com.golpe.io`, `golpe.com\.dominio.com` e usuário:senha na URL).
 - Prévias tocam do Google Drive por link não listado: quem não tem o link não acha.
 
+## IA (Roteiro com IA)
+- O navegador chama o Gemini pelo **Firebase AI Logic**: não existe chave de IA no site. Quem
+  paga/consome é a cota do projeto, protegida pelo **App Check** (reCAPTCHA Enterprise invisível,
+  aplicado ao AI Logic no console): pedidos que não saem de `estudio-canais.web.app` ou
+  `estudio-canais.firebaseapp.com` são recusados. A chave do reCAPTCHA em `web/config.js` é a
+  chave de **site** (pública por natureza).
+- A cota é uma só para todos os estúdios: mais um motivo para manter o cadastro só por convite.
+- Tudo que a IA devolve é tratado como texto não confiável: passa por `esc()` antes de virar HTML,
+  e os ids de personagem e cenário que ela devolve são filtrados contra a bíblia (`salvarCapitulo`).
+- O texto enviado à IA é só o da série (bíblia, arco, capítulos). Nada de e-mail, contas ou dinheiro.
+
 ## Segredos
 - Nada de chave de API no `web/` nem no Git. Na produção automática, use o Secret Manager:
   `firebase functions:secrets:set GEMINI_API_KEY`.
@@ -38,7 +49,8 @@
 - **Vazou uma chave?** Revogue primeiro (Google AI Studio, Azure, Pexels, Pixabay), depois limpe.
 
 ## Cadeia de suprimentos
-- O site não usa npm: só o SDK oficial do Firebase pelo `gstatic.com`, em versão fixa (10.12.2).
+- O site não usa npm: só o SDK oficial do Firebase pelo `gstatic.com`, em versão fixa (12.19.0),
+  e o reCAPTCHA do `google.com` (liberados nominalmente na CSP do `firebase.json`).
 - `functions/` terá `package-lock.json` e `npm audit` no CI quando existir.
 
 ## Reportar um problema

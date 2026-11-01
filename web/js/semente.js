@@ -107,6 +107,7 @@
     });
     return {
       ...base(agora),
+      ...roteiroDeExemplo(agora, canais),
       exemplo: true,
       canais,
       videos,
@@ -142,7 +143,7 @@
   function base(agora) {
     const quando = (dias) => new Date(agora.getTime() - dias * 86400e3).toISOString();
     return {
-      versao: 3,
+      versao: 4,
       plataforma: { acesso: { aberto: false, convidados: ["amiga@exemplo.com"] } },
       estudios: {
         demo: { email: "voce@exemplo.com", nome: "Você (demonstração)", ativo: true, criadoEm: quando(40) },
@@ -155,7 +156,79 @@
   function vazio(agora) {
     return {
       ...base(agora), exemplo: false, canais: {}, videos: {}, contas: {}, acoes: [], eventos: [], custos: [],
-      metricas: [], receitas: [], campanhas: [], config: {},
+      metricas: [], receitas: [], campanhas: [], config: {}, series: {}, capitulos: {},
+    };
+  }
+
+  /** Série de exemplo do Roteiro com IA: bíblia, começo do arco e o capítulo 1 com os quadros. */
+  function roteiroDeExemplo(agora, canais) {
+    const R = raiz.Roteiro || (typeof require === "function" ? require("./roteiro.js") : null);
+    if (!R || !canais["biblico-manhwa"]) return { series: {}, capitulos: {} };
+    const quando = new Date(agora.getTime() - 2 * 86400e3).toISOString();
+    const comFicha = (item, en) => ({ ...item, ficha_en: en, ficha_de: R.baseFicha(item) });
+    const personagens = [
+      comFicha({ id: "davi", nome: "Davi", aparencia: "menino de uns 15 anos, magro, ruivo, olhos claros, pele bronzeada de sol", roupas: "túnica bege simples até o joelho, cinto de couro com uma funda, sandálias gastas", personalidade: "corajoso, poético, fala pouco e age rápido", ficha: "Personagens/davi_ficha.png" },
+        "slim 15-year-old boy, wavy red hair, light eyes, sun-tanned skin, knee-length plain beige tunic, leather belt with a sling, worn leather sandals"),
+      comFicha({ id: "golias", nome: "Golias", aparencia: "gigante de quase 3 metros, barba negra trançada, cicatriz no rosto", roupas: "couraça de escamas de bronze, elmo de bronze, lança enorme com ponta de ferro", personalidade: "arrogante, debochado, voz de trovão", ficha: "Personagens/golias_ficha.png" },
+        "towering warrior almost 3 meters tall, braided black beard, scar across the cheek, bronze scale armor, bronze helmet, huge spear with an iron tip"),
+      { id: "saul", nome: "Saul", aparencia: "homem alto de uns 50 anos, barba escura com fios brancos", roupas: "manto real escuro, coroa simples de bronze", personalidade: "inseguro, ciumento, impulsivo", ficha: "Personagens/saul_ficha.png", ficha_en: "", ficha_de: "" },
+    ];
+    const cenarios = [
+      comFicha({ id: "belem", nome: "Belém", descricao: "vila de pedra em colinas com terraços e oliveiras, Idade do Ferro" }, "small Iron Age stone village on terraced hills, olive trees, flat clay roofs, dusty paths"),
+      comFicha({ id: "pasto", nome: "Pasto de Belém", descricao: "colinas secas e pedregosas com ovelhas" }, "dry rocky hills with sparse grass and grazing sheep, wide open sky"),
+      comFicha({ id: "vale-de-ela", nome: "Vale de Elá", descricao: "vale largo e seco entre duas colinas, riacho de pedras lisas no meio" }, "wide dry valley between two hills with army camps on each side, a shallow stream of smooth stones in the middle"),
+    ];
+    const historia = "Belém, mil anos antes de Cristo. Um menino cuida das ovelhas enquanto o país inteiro vive com medo. "
+      + "O nome dele é Davi, o caçula de oito irmãos. Em casa, ninguém espera nada dele. "
+      + "Mas certa tarde um velho profeta chega à vila trazendo um chifre cheio de óleo. É Samuel. "
+      + "Ele olha os filhos de Jessé, um por um. O mais alto não serve. O mais forte também não. "
+      + "Deus não olha a aparência, diz o profeta. Ele olha o coração. Falta algum filho? "
+      + "Jessé hesita. Falta o pequeno, que ficou com as ovelhas. Mandam buscar Davi. "
+      + "Ele chega correndo, com as mãos sujas de terra e o cheiro do campo. "
+      + "Diante dos irmãos calados, Samuel derrama o óleo sobre a cabeça do menino. "
+      + "Naquele dia nada muda por fora. Davi volta para o pasto e para as ovelhas. "
+      + "Mas, longe dali, no vale de Elá, um gigante começa a desafiar o exército de Israel todos os dias. "
+      + "E o pastor ainda não sabe que é ele quem vai responder.";
+    const q = (trecho, pers, cenario, acao, enq) => ({ trecho, personagens: pers, cenario, acao_en: acao, enquadramento_en: enq });
+    const quadros = [
+      q("Belém, mil anos antes de Cristo.", [], "belem", "the village at golden hour, smoke rising from clay ovens, shepherds on the slopes", "wide establishing shot"),
+      q("Um menino cuida das ovelhas enquanto o país inteiro vive com medo.", ["davi"], "pasto", "the boy sits on a rock watching his sheep, holding a wooden staff, worried travelers on a distant road", "medium wide shot"),
+      q("O nome dele é Davi, o caçula de oito irmãos. Em casa, ninguém espera nada dele.", ["davi"], "pasto", "the boy alone against a huge sky, looking toward the village, calm expression", "low angle, rule of thirds"),
+      q("Mas certa tarde um velho profeta chega à vila trazendo um chifre cheio de óleo. É Samuel.", [], "belem", "an elderly prophet with a long white beard and a brown cloak walks into the village carrying a ram's horn of oil", "medium shot, dust in the air"),
+      q("Ele olha os filhos de Jessé, um por um. O mais alto não serve. O mais forte também não.", [], "belem", "seven tall young men stand in a row in a stone courtyard while the old prophet studies them", "wide shot"),
+      q("Deus não olha a aparência, diz o profeta. Ele olha o coração. Falta algum filho?", [], "belem", "the old prophet's eyes, thoughtful, warm side light", "extreme close-up"),
+      q("Jessé hesita. Falta o pequeno, que ficou com as ovelhas. Mandam buscar Davi. Ele chega correndo, com as mãos sujas de terra e o cheiro do campo.", ["davi"], "belem", "the boy runs into the courtyard breathing hard, dusty hands, his brothers turn to look", "medium shot, motion lines"),
+      q("Diante dos irmãos calados, Samuel derrama o óleo sobre a cabeça do menino.", ["davi"], "belem", "oil pours from a ram's horn over the kneeling boy's head, silent brothers in the background", "low angle, dramatic backlight"),
+      q("Naquele dia nada muda por fora. Davi volta para o pasto e para as ovelhas. Mas, longe dali, no vale de Elá, um gigante começa a desafiar o exército de Israel todos os dias. E o pastor ainda não sabe que é ele quem vai responder.", ["golias"], "vale-de-ela", "the giant warrior stands on a hill shouting across the valley at a frightened army, spear raised", "epic low angle wide shot"),
+    ];
+    const serie = {
+      nome: "Temporada Davi", canal: "biblico-manhwa", meta: 50,
+      premissa: "A vida de Davi, do pastor de Belém ao rei de Israel, contada em capítulos curtos e fiéis ao texto bíblico (1 e 2 Samuel).",
+      regras: (canais["biblico-manhwa"].roteiro || {}).instrucoes || "",
+      estilo: ((canais["biblico-manhwa"].estilo_visual || {}).prompt_base || R.ESTILO_PADRAO).trim(),
+      evitar: "texto na imagem, rosto realista de figuras sagradas, armaduras medievais europeias",
+      evitar_en: "text in the image, realistic faces of sacred figures, medieval European armor", evitar_de: "",
+      personagens, cenarios,
+      arco: [
+        { n: 1, titulo: "O caçula ungido", resumo: "Samuel unge Davi em segredo diante dos irmãos." },
+        { n: 2, titulo: "O desafio de Golias", resumo: "O gigante desafia Israel por 40 dias e ninguém responde." },
+        { n: 3, titulo: "A missão das provisões", resumo: "Jessé manda Davi levar comida aos irmãos no acampamento." },
+        { n: 4, titulo: "O leão e o urso", resumo: "Davi convence Saul contando como defendeu as ovelhas." },
+        { n: 5, titulo: "A armadura do rei", resumo: "Davi recusa a armadura de Saul e escolhe cinco pedras." },
+      ],
+      criadoEm: quando, atualizadoEm: quando,
+    };
+    serie.evitar_de = R.hashTexto(serie.evitar);
+    const id = R.idCapitulo("temporada-davi", 1);
+    return {
+      series: { "temporada-davi": serie },
+      capitulos: {
+        [id]: {
+          serie: "temporada-davi", n: 1, titulo: "O caçula ungido", historia,
+          resumo: "Samuel unge o caçula Davi diante dos irmãos. Enquanto isso, Golias começa a desafiar Israel.",
+          ideia: "", quadros, quadros_de: R.hashTexto(historia), criadoEm: quando, atualizadoEm: quando,
+        },
+      },
     };
   }
 

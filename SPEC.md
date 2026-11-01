@@ -13,7 +13,8 @@
 6. Vídeos ficam no **Google Drive** de cada usuário (link "qualquer pessoa com o link"); o painel toca a prévia de lá.
 7. Duração-alvo **61–80 s** (TikTok só paga a partir de 1 min; Reels pela API vai até 90 s), ajustável por canal (15–180 s).
 8. Publicação **assistida**: o painel copia a legenda de cada rede e abre a página oficial de envio; o usuário publica e cola o link.
-9. Produção automática (roteiro, voz, montagem, testes) fica para **Cloud Functions** em `functions/` (plano Blaze).
+9. Produção automática (voz, montagem, testes) fica para **Cloud Functions** em `functions/` (plano Blaze).
+10. **Roteiro com IA** no navegador: Gemini pelo Firebase AI Logic (Gemini Developer API, plano grátis), protegido por **App Check** com reCAPTCHA Enterprise. Nenhuma chave de IA no site. A IA escreve história, quadros, fichas em inglês e o arco; os prompts de imagem são montados pelo código, copiando a ficha de cada personagem da bíblia (a continuidade não depende da memória da IA).
 
 ## Objetivo
 Reduzir o trabalho de cada dono de estúdio a assistir, aprovar e publicar (≈8 min por vídeo), com os
@@ -25,7 +26,9 @@ números que importam (metas dos programas, dinheiro, gatilho do próximo canal)
 |---|---|
 | `js/motor.js` | Regras puras: telas (`get`), ações (`post` → `{resposta, mudancas}`), canais, horários, publicação, contas, cadastro, validações. Roda no navegador e no Node. |
 | `js/dados.js` | `window.FONTE`: login Google, cria o estúdio no primeiro acesso (se o cadastro deixar), carrega o estado de `estudios/{uid}`, grava as mudanças em lote. Ou demonstração no navegador. |
-| `js/app.js` | Telas, rotas por hash (`#canais/novo/<modelo>`, `#canais/editar/<canal>`), formulários. Só fala com `FONTE`. |
+| `js/app.js` | Telas, rotas por hash (`#canais/novo/<modelo>`, `#canais/editar/<canal>`, `#producao/roteiro/<serie>/<n>`), formulários. Só fala com `FONTE` e `IA`. |
+| `js/roteiro.js` | Regras puras do roteiro: séries, bíblia, capítulos, `montarPrompt` e os textos dos pedidos à IA (registra rotas no motor). |
+| `js/ia.js` | `window.IA.gerar(tipo, texto, info)`: Gemini com resposta em JSON por esquema; modelo de reserva quando a cota acaba; gerador falso na demonstração. |
 | `js/semente.js` | Dados de exemplo e estúdio vazio da demonstração. |
 | `dados/*.json` | Modelos de canal e plataformas (publicados com `firebase deploy`). |
 
@@ -41,6 +44,10 @@ números que importam (metas dos programas, dinheiro, gatilho do próximo canal)
 | `estudios/{uid}/acoes/{auto}` · `eventos/{auto}` | auditoria e console (só criar) |
 | `estudios/{uid}/custos` · `receitas` · `campanhas` · `metricas` | dinheiro e números |
 | `estudios/{uid}/config/geral` | teto_mes_brl, preços, câmbio, créditos do Flow, metricas{} |
+| `estudios/{uid}/series/{slug}` | nome, canal, premissa, regras, meta (capítulos), estilo (inglês), evitar, evitar_en, personagens[{id, nome, aparencia, roupas, personalidade, ficha, ficha_en, ficha_de}], cenarios[{id, nome, descricao, ficha_en, ficha_de}], arco[{n, titulo, resumo}] |
+| `estudios/{uid}/capitulos/{serie}--{nnn}` | serie, n, titulo, historia, resumo, ideia, quadros[{trecho, personagens[ids], cenario, acao_en, enquadramento_en}], quadros_de (impressão da história que gerou os quadros) |
+
+`ficha_de` guarda a impressão do texto em português que gerou a ficha em inglês: se a aparência ou a roupa mudar, a ficha fica "velha" e é refeita ao salvar a bíblia. Se a história mudar, `quadros_de` deixa de bater e os prompts são refeitos.
 
 O `slug` do canal sai do nome ("Histórias da Bíblia!" → `historias-da-biblia`), ganha sufixo se repetir
 e não muda depois. Canal com vídeos não pode ser apagado (o painel confere no banco); pausa-se.

@@ -910,7 +910,9 @@
       case "/api/plataformas": return plataformas(e, agora);
       case "/api/publicar": return publicar(e, aba || "pendentes", agora);
       case "/api/plataforma": return telaPlataforma(e);
-      default: throw new Invalido("tela desconhecida", 404);
+      default:
+        if (EXTRAS_GET[rota]) return EXTRAS_GET[rota](e, new URLSearchParams(consulta), agora);
+        throw new Invalido("tela desconhecida", 404);
     }
   }
 
@@ -930,6 +932,13 @@
     [new RegExp(`^/api/publicacoes/${ID_VIDEO}/${SLUG}$`), (e, m, c, a) => marcarPublicacao(e, m[1], m[2], c, a)],
   ];
 
+  /** Módulos extras (ex.: roteiro.js) registram telas e ações aqui. */
+  const EXTRAS_GET = {};
+  function registrar(telas, acoes) {
+    Object.assign(EXTRAS_GET, telas || {});
+    (acoes || []).forEach((a) => ROTAS.push(a));
+  }
+
   function post(e, caminho, corpo, agora) {
     for (const [padrao, fazer] of ROTAS) {
       const m = padrao.exec(String(caminho));
@@ -940,7 +949,7 @@
 
   const Motor = {
     ETAPAS, FAIXAS_CONFIG, VERSAO, LIMITE_CANAIS, Invalido, isoBR, diaBR, mesBR, somarDias, aplicar, get, post,
-    proximoHorario, hostAceito, legenda, elegibilidade, progresso, idDoDrive, testeDuracao, novoId, slugDe,
+    proximoHorario, hostAceito, legenda, elegibilidade, progresso, idDoDrive, testeDuracao, novoId, slugDe, registrar, texto,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = Motor;
   else raiz.Motor = Motor;

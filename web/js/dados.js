@@ -12,9 +12,9 @@
   const LIGADO = Boolean(FB.apiKey && !/^COLE/.test(FB.apiKey) && FB.projectId);
   const ADMIN = String(CFG.admin || "").trim().toLowerCase();
   const M = window.Motor;
-  const VERSAO_SDK = "10.12.2";
+  const VERSAO_SDK = "12.19.0"; // app, auth, firestore, ai e app-check precisam ser da mesma versão
   const VERSAO_DADOS = 1; // sobe quando o formato no banco mudar (migração no primeiro acesso)
-  const CHAVE_DEMO = "estudio:demo:v3";
+  const CHAVE_DEMO = "estudio:demo:v4";
   const VALIDADE_MS = 30e3; // recarrega do banco se o estado tiver mais de 30 s
   const DRIVE_ID = /^[A-Za-z0-9_-]{10,100}$/;
   const MAPA = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -40,7 +40,7 @@
   function lerDemo() {
     try {
       const d = JSON.parse(localStorage.getItem(CHAVE_DEMO));
-      if (d && d.versao === 3) return d;
+      if (d && d.versao === 4) return d;
     } catch {
       /* armazenamento bloqueado ou corrompido: recomeça do exemplo */
     }
@@ -68,7 +68,7 @@
       demoMemoria = d;
       return {
         ...JSON.parse(JSON.stringify(d)), modelos: f.modelos, plataformas: f.plataformas,
-        conexao: { modo: "demo", projeto: "", email: "", uid: "demo", admin: true, funcoes: false },
+        conexao: { modo: "demo", projeto: "", email: "", uid: "demo", admin: true, funcoes: false, ia: true },
       };
     },
     async gravar(mudancas) {
@@ -91,11 +91,14 @@
   function firebase() {
     if (sdk) return sdk;
     const base = `https://www.gstatic.com/firebasejs/${VERSAO_SDK}/`;
-    sdk = Promise.all([import(`${base}firebase-app.js`), import(`${base}firebase-auth.js`), import(`${base}firebase-firestore.js`)])
-      .then(([app, A, F]) => {
-        const aplicativo = app.initializeApp(FB);
-        return { A, F, auth: A.getAuth(aplicativo), db: F.getFirestore(aplicativo) };
-      });
+    const modulos = [import(`${base}firebase-app.js`), import(`${base}firebase-auth.js`), import(`${base}firebase-firestore.js`)];
+    if (CFG.recaptcha) modulos.push(import(`${base}firebase-app-check.js`));
+    sdk = Promise.all(modulos).then(([app, A, F, C]) => {
+      const aplicativo = app.initializeApp(FB);
+      // App Check (reCAPTCHA invisível): a IA só responde a pedidos que saem deste site
+      if (C) C.initializeAppCheck(aplicativo, { provider: new C.ReCaptchaEnterpriseProvider(CFG.recaptcha), isTokenAutoRefreshEnabled: true });
+      return { A, F, app: aplicativo, auth: A.getAuth(aplicativo), db: F.getFirestore(aplicativo) };
+    });
     return sdk;
   }
   const usuario = (f) => new Promise((ok) => {
@@ -219,11 +222,13 @@
           F.getDocs(col("receitas")),
           F.getDocs(col("campanhas")),
           F.getDoc(F.doc(db, "estudios", NUVEM.uid, "config", "geral")),
+          F.getDocs(col("series")),
+          F.getDocs(F.query(col("capitulos"), F.limit(2000))),
         ];
         if (NUVEM.admin) {
           pedidos.push(F.getDoc(F.doc(db, "plataforma", "acesso")), F.getDocs(F.query(F.collection(db, "estudios"), F.limit(500))));
         }
-        const [canais, ativos, recentes, contas, acoes, eventos, custos, metricas, receitas, campanhas, config, acesso, estudios] = await Promise.all(pedidos);
+        const [canais, ativos, recentes, contas, acoes, eventos, custos, metricas, receitas, campanhas, config, series, capitulos, acesso, estudios] = await Promise.all(pedidos);
         const mapa = (...snaps) => {
           const o = {};
           snaps.forEach((s) => s.forEach((d) => { o[d.id] = { id: d.id, ...d.data() }; }));
@@ -241,7 +246,11 @@
           videos: mapa(ativos, recentes), contas: mapa(contas),
           acoes: listaDe(acoes), eventos: listaDe(eventos), custos: listaDe(custos), metricas: listaDe(metricas),
           receitas: listaDe(receitas), campanhas: listaDe(campanhas), config: config.exists() ? config.data() : {},
-          conexao: { modo: "firebase", projeto: FB.projectId, email: NUVEM.email, uid: NUVEM.uid, admin: NUVEM.admin, funcoes: Boolean(CFG.funcoes) },
+          series: mapa(series), capitulos: mapa(capitulos),
+          conexao: {
+            modo: "firebase", projeto: FB.projectId, email: NUVEM.email, uid: NUVEM.uid, admin: NUVEM.admin,
+            funcoes: Boolean(CFG.funcoes), ia: Boolean(CFG.recaptcha),
+          },
         };
         if (NUVEM.admin) {
           estado.plataforma = { acesso: acesso.exists() ? acesso.data() : { aberto: false, convidados: [] } };
@@ -306,6 +315,9 @@
   window.FONTE = {
     get modo() { return banco.modo; },
     get admin() { return banco.admin; },
+    versaoSdk: VERSAO_SDK,
+    /** O app do Firebase já iniciado (o js/ia.js usa o mesmo, com o mesmo login e App Check). */
+    async appFirebase() { return LIGADO ? (await firebase()).app : null; },
     iniciar: (tela) => banco.iniciar(tela),
     async get(caminho) {
       const e = await obterEstado(false);

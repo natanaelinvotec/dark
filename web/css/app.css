@@ -250,6 +250,32 @@ textarea.mg-texto-curto { min-height: 56px; }
 .mg-passos li { margin: 6px 0; }
 .mg-barra-abas .mg-entre { flex: 1 1 100%; gap: 12px; flex-wrap: wrap; }
 
+/* ----- roteiro com IA ----- */
+a.mg-tab { text-decoration: none; }
+.mg-tab[aria-current="page"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.mg-roteiro-topo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
+.mg-roteiro-topo .mg-campo { margin-top: 0; min-width: 220px; flex: 1 1 260px; }
+.mg-linha { display: flex; align-items: center; gap: 8px; }
+.mg-roteiro { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+textarea.mg-historia { min-height: 380px; line-height: 1.55; font-weight: 500; }
+.mg-quadros { list-style: none; margin: 0; padding: 0; max-height: 980px; overflow-y: auto; }
+.mg-quadro { border-top: 1px solid var(--linha); padding: 14px 0; }
+.mg-quadro .mg-legenda { margin-top: 8px; gap: 6px; }
+.mg-trecho { font-style: italic; }
+.mg-prompt { margin: 10px 0 0; padding: 12px 14px; background: var(--card2); border: 1px solid var(--linha); border-radius: 14px; white-space: pre-wrap; word-break: break-word; font: 500 12.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--tinta); }
+.mg-itens { display: grid; gap: 12px; }
+.mg-item { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; border: 1px solid var(--linha); border-radius: 16px; padding: 4px 16px 14px; margin: 0; min-width: 0; }
+.mg-item .mg-btn { justify-self: start; margin-top: 10px; }
+.mg-curto { max-width: 140px; }
+textarea.mg-arco { min-height: 260px; font: 500 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.mg-detalhes summary.mg-h2 { font-size: 17px; color: var(--tinta); }
+.mg-recaptcha { font-size: 12px; }
+/* o selo do reCAPTCHA some (o aviso de privacidade fica no rodapé do roteiro, como o Google pede) */
+.grecaptcha-badge { visibility: hidden; position: fixed; bottom: 0; right: 0; width: 0; height: 0; overflow: hidden; }
+@media (max-width: 1100px) {
+  .mg-roteiro, .mg-item { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mg-in { animation: mgFade 160ms both; }
   .mg-esqueleto { animation: none; }

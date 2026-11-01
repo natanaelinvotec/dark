@@ -31,6 +31,8 @@ const estado = {
   mensagem: null,
   levar: null,
   modelos: [],
+  prefill: null,
+  roteiro: { dados: null, ocupado: null, timer: null, sugestoes: [] },
 };
 const ABAS_PLAT = ["publicar", "feitos", "contas"];
 const SITUACAO_PUB = { pendente: ["espera", "Pendente"], publicado: ["ok", "Publicado"], pulado: ["espera", "Pulado"] };
@@ -193,6 +195,9 @@ const telaErro = (erro) => `
   </div>`;
 
 async function navegar(comEsqueleto = true) {
+  const destino = lerRota();
+  // saindo do capítulo: o que foi digitado e ainda não foi salvo vai para o banco antes
+  if (destino.rota !== estado.rota || destino.param !== estado.param) await salvarPendenteRoteiro();
   const { rota, param } = lerRota();
   if (rota !== estado.rota || param !== estado.param) {
     // itens "recém-decididos" só fazem sentido na aba onde a decisão foi tomada
@@ -290,11 +295,15 @@ const TELAS = {
       <section class="mg-g2 mg-mt" aria-label="Vídeos">${itens.map(cartaoVideo).join("")}</section>`;
   },
 
-  async producao() {
+  async producao(param) {
+    if (param.startsWith("roteiro")) return abasProducao("roteiro") + await telaRoteiro(param);
     const [p, c] = await Promise.all([api("/api/producao"), api("/api/canais")]);
+    // vindo do Roteiro com IA ("já fiz o vídeo deste capítulo"): o formulário já chega preenchido
+    const pre = estado.prefill || {};
+    estado.prefill = null;
     const opcoes = c.canais
       .filter((x) => x.ligado)
-      .map((x) => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`)
+      .map((x) => `<option value="${esc(x.id)}"${x.id === pre.canal ? " selected" : ""}>${esc(x.nome)}</option>`)
       .join("");
     const videos = p.videos.length
       ? p.videos.map(linhaProducao).join("")
@@ -310,23 +319,23 @@ const TELAS = {
           <a class="mg-btn mg-pri mg-mt" href="#canais${c.canais.length ? "" : "/novo"}">${c.canais.length ? "Abrir Canais" : "Criar canal"}</a>
         </div>`;
     if (!opcoes) {
-      return `<section class="mg-split mg-split-inv"><div>${semCanal}</div>
+      return `${abasProducao("linha")}<section class="mg-split mg-split-inv"><div>${semCanal}</div>
         <div class="mg-card mg-in"><h2 class="mg-h2">Em produção agora</h2>${videos}</div></section>`;
     }
-    return `
+    return `${abasProducao("linha")}
       <section class="mg-split mg-split-inv">
        <div>
         <form class="mg-card mg-in" data-form="adicionar" aria-labelledby="t-adicionar" novalidate>
           <h2 class="mg-h2" id="t-adicionar">Adicionar vídeo pronto</h2>
           <p class="mg-sub">Fez o vídeo em outra ferramenta? Cole o link do Google Drive (compartilhado como "qualquer pessoa com o link") e ele entra na fila de aprovação.</p>
           <div class="mg-campo"><label for="a-canal">Canal</label><select class="mg-input" id="a-canal" name="canal">${opcoes}</select></div>
-          <div class="mg-campo"><label for="a-titulo">Título</label><input class="mg-input" id="a-titulo" name="titulo" maxlength="120" required aria-describedby="e-a-titulo"><p class="mg-erro" id="e-a-titulo"></p></div>
+          <div class="mg-campo"><label for="a-titulo">Título</label><input class="mg-input" id="a-titulo" name="titulo" maxlength="120" required aria-describedby="e-a-titulo" value="${esc(pre.titulo || "")}"><p class="mg-erro" id="e-a-titulo"></p></div>
           <div class="mg-campo"><label for="a-link">Link do vídeo no Drive</label><input class="mg-input" id="a-link" name="link" type="url" inputmode="url" maxlength="300" placeholder="https://drive.google.com/file/d/…" aria-describedby="e-a-link"><p class="mg-erro" id="e-a-link"></p></div>
           <div class="mg-g2">
             <div class="mg-campo"><label for="a-duracao">Duração (segundos)</label><input class="mg-input" id="a-duracao" name="duracao" type="number" min="1" max="600" inputmode="numeric" placeholder="ex.: 68"></div>
-            <div class="mg-campo"><label for="a-serie">Série (opcional)</label><input class="mg-input" id="a-serie" name="serie" maxlength="120"></div>
+            <div class="mg-campo"><label for="a-serie">Série (opcional)</label><input class="mg-input" id="a-serie" name="serie" maxlength="120" value="${esc(pre.serie || "")}"></div>
           </div>
-          <div class="mg-campo"><label for="a-descricao">Descrição e hashtags (opcional)</label><textarea class="mg-input" id="a-descricao" name="descricao" maxlength="1000" placeholder="Uma linha de descrição. #curiosidades #ciencia"></textarea></div>
+          <div class="mg-campo"><label for="a-descricao">Descrição e hashtags (opcional)</label><textarea class="mg-input" id="a-descricao" name="descricao" maxlength="1000" placeholder="Uma linha de descrição. #curiosidades #ciencia">${esc(pre.descricao || "")}</textarea></div>
           <button type="submit" class="mg-btn mg-pri mg-mt">Mandar para a fila</button>
         </form>
         <form class="mg-card mg-in mg-mt" data-form="lote" aria-labelledby="t-lote" novalidate>
@@ -1414,6 +1423,570 @@ const FORMULARIOS = {
   },
 };
 
+/* ------------------------------------------------------------------ roteiro com IA */
+/* Dois boxes: a história (esquerda) e os prompts de imagem de cada quadro (direita).
+   Quando a história muda (pela IA ou digitando), os quadros são refeitos sozinhos depois de uma
+   pausa; os prompts são montados pelo js/roteiro.js com a ficha fixa de cada personagem. */
+
+const ESPERA_DIGITACAO_MS = 4000;
+
+function abasProducao(aba) {
+  const botoes = [["linha", "Linha de produção", "#producao"], ["roteiro", "Roteiro com IA", "#producao/roteiro"]]
+    .map(([id, rotulo, href]) => `<a class="mg-tab" href="${href}"${id === aba ? ' aria-current="page"' : ""}>${rotulo}</a>`)
+    .join("");
+  return `<nav class="mg-card mg-in mg-barra-abas" aria-label="Produção"><div class="mg-abas">${botoes}</div>
+    <p class="mg-sub">${aba === "roteiro" ? "A IA escreve a história e os prompts de imagem; a bíblia da série mantém os personagens iguais do capítulo 1 ao 50." : "Adicione vídeos prontos e acompanhe a produção."}</p></nav>`;
+}
+
+const rotaRoteiro = (serie, n) => `#producao/roteiro/${encodeURIComponent(serie)}${n ? `/${n}` : ""}`;
+
+async function telaRoteiro(param) {
+  const [, serieP = "", capP = ""] = param.split("/");
+  const consulta = new URLSearchParams();
+  if (serieP && serieP !== "nova") consulta.set("serie", serieP);
+  if (capP) consulta.set("cap", capP);
+  const d = await api(`/api/roteiro?${consulta}`);
+  estado.roteiro.dados = d;
+  if (serieP === "nova" || !d.serie) return formNovaSerie(d, serieP === "nova");
+  const s = d.serie;
+  const cap = d.cap;
+  const opcoesSerie = d.series.map((x) => `<option value="${esc(x.id)}"${x.id === s.id ? " selected" : ""}>${esc(x.nome)} (${x.capitulos}/${x.meta})</option>`).join("");
+  const feitos = new Set(d.capitulos.filter((c) => c.pronto).map((c) => c.n));
+  const opcoesCap = Array.from({ length: s.meta }, (_, i) => i + 1)
+    .map((n) => `<option value="${n}"${n === cap.n ? " selected" : ""}>${feitos.has(n) ? "✓ " : ""}Capítulo ${n}${(d.capitulos.find((c) => c.n === n) || {}).titulo ? `: ${esc(d.capitulos.find((c) => c.n === n).titulo)}` : ""}</option>`).join("");
+  const anterior = cap.n > 1 ? `<a class="mg-btn mg-sec mg-sm" href="${rotaRoteiro(s.id, cap.n - 1)}" aria-label="Capítulo anterior">‹</a>` : "";
+  const proximo = cap.n < s.meta ? `<a class="mg-btn mg-sec mg-sm" href="${rotaRoteiro(s.id, cap.n + 1)}" aria-label="Próximo capítulo">›</a>` : "";
+  const semIa = d.ia ? "" : '<p class="mg-aviso mg-c-at mg-mt">IA desligada: falta a chave do reCAPTCHA em web/config.js. Dá para escrever e salvar à mão.</p>';
+  const msg = estado.mensagem ? `<p class="mg-chip mg-c-ok" role="status">${esc(estado.mensagem)}</p>` : "";
+  return `
+    <section class="mg-card mg-in mg-mt mg-roteiro-topo">
+      <div class="mg-campo"><label for="r-serie">Série</label>
+        <select class="mg-input" id="r-serie" data-roteiro-serie>${opcoesSerie}</select></div>
+      <div class="mg-campo"><label for="r-cap">Capítulo</label>
+        <div class="mg-linha">${anterior}<select class="mg-input" id="r-cap" data-roteiro-cap>${opcoesCap}</select>${proximo}</div></div>
+      <a class="mg-btn mg-sec" href="#producao/roteiro/nova">Nova série</a>
+      <p class="mg-sub mg-largura">${esc(s.canal.nome)} · ${feitos.size} de ${s.meta} capítulos escritos · ${d.formato.palavras[0]}–${d.formato.palavras[1]} palavras (${d.formato.duracao[0]}–${d.formato.duracao[1]} s)</p>
+      <div class="mg-largura" id="r-status" aria-live="polite">${msg}</div>
+      ${semIa}
+    </section>
+    <section class="mg-roteiro mg-mt">
+      ${boxHistoria(d)}
+      <div class="mg-card mg-in" data-quadros data-atraso="50">${painelQuadros(d)}</div>
+    </section>
+    ${boxBiblia(d)}
+    ${boxArco(d)}
+    <section class="mg-card mg-mt mg-in mg-entre">
+      <div><h2 class="mg-h2">Já fez as imagens e montou o vídeo?</h2>
+        <p class="mg-sub">Mande o vídeo deste capítulo para a fila com título, série e descrição preenchidos.</p></div>
+      <button type="button" class="mg-btn mg-pri" data-acao="capitulo-para-fila"${cap.historia ? "" : " disabled"}>Adicionar vídeo pronto</button>
+    </section>
+    <p class="mg-sub mg-mt mg-recaptcha">Protegido pelo reCAPTCHA do Google: valem a
+      <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Política de Privacidade</a> e os
+      <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">Termos de Serviço</a>.</p>`;
+}
+
+function formNovaSerie(d, pedida) {
+  if (!d.canais.length) {
+    return `<div class="mg-card mg-vazio mg-mt"><p class="mg-h2">Crie um canal primeiro</p>
+      <p class="mg-sub">A série usa o estilo visual e os personagens do canal.</p><a class="mg-btn mg-pri mg-mt" href="#canais/novo">Criar canal</a></div>`;
+  }
+  const canais = d.canais.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join("");
+  return `
+    <form class="mg-card mg-in mg-mt" data-form="serie" novalidate>
+      <h2 class="mg-h2">${pedida && d.series.length ? "Nova série" : "Comece uma série"}</h2>
+      <p class="mg-sub">A série guarda a bíblia (personagens, roupas, lugares, estilo) e o plano dos capítulos. Ela começa com os personagens do canal.</p>
+      <div class="mg-g2">
+        <div class="mg-campo"><label for="s-nome">Nome da série</label>
+          <input class="mg-input" id="s-nome" name="nome" maxlength="60" required placeholder="Ex.: Temporada Davi" aria-describedby="e-nome"><p class="mg-erro" id="e-nome"></p></div>
+        <div class="mg-campo"><label for="s-canal">Canal</label><select class="mg-input" id="s-canal" name="canal" aria-describedby="e-canal">${canais}</select><p class="mg-erro" id="e-canal"></p></div>
+      </div>
+      <div class="mg-campo"><label for="s-premissa">Premissa: do que é a série, do começo ao fim</label>
+        <textarea class="mg-input" id="s-premissa" name="premissa" maxlength="2000" placeholder="Ex.: a vida de Davi, de pastor em Belém a rei de Israel, fiel a 1 e 2 Samuel."></textarea></div>
+      <div class="mg-campo"><label for="s-meta">Quantos capítulos</label>
+        <input class="mg-input mg-curto" id="s-meta" name="meta" type="number" min="1" max="200" value="50" inputmode="numeric" aria-describedby="e-meta"><p class="mg-erro" id="e-meta"></p></div>
+      <div class="mg-acoes mg-mt"><button type="submit" class="mg-btn mg-pri">Criar série</button>
+        ${d.series.length ? `<a class="mg-btn mg-ghost" href="#producao/roteiro">Cancelar</a>` : ""}</div>
+      <p class="mg-erro mg-mt" id="e-geral" aria-live="polite"></p>
+    </form>`;
+}
+
+function contagem(palavras, f) {
+  const s = Math.round(palavras / 2.5);
+  const ok = palavras >= f.palavras[0] && palavras <= f.palavras[1];
+  return `${chip(palavras ? (ok ? "ok" : "at") : "espera", `${palavras} palavras · cerca de ${s} s`)} <span class="mg-sub">meta: ${f.palavras[0]} a ${f.palavras[1]}</span>`;
+}
+
+function boxHistoria(d) {
+  const { cap, serie: s } = d;
+  const batida = cap.batida
+    ? `<p class="mg-sub">Plano do arco: <b>${esc(cap.batida.titulo)}</b>${cap.batida.resumo ? `. ${esc(cap.batida.resumo)}` : ""}</p>`
+    : '<p class="mg-sub">Sem plano para este capítulo: planeje o arco lá embaixo ou dê uma direção.</p>';
+  const sugestoes = estado.roteiro.sugestoes.length
+    ? `<div class="mg-bloco"><p class="mg-forte">A IA usou alguém ou algum lugar fora da bíblia</p>${estado.roteiro.sugestoes.map((x, i) => `
+        <div class="mg-row"><div class="mg-flex1"><p class="mg-forte">${esc(x.nome)} <span class="mg-sub">(${x.tipo === "cenario" ? "cenário" : "personagem"})</span></p>
+          <p class="mg-sub">${esc(x.aparencia || x.descricao || "")}${x.roupas ? `; ${esc(x.roupas)}` : ""}</p></div>
+          <button type="button" class="mg-btn mg-sec mg-sm" data-acao="aceitar-sugestao" data-i="${i}">Pôr na bíblia</button></div>`).join("")}</div>`
+    : "";
+  return `
+    <form class="mg-card mg-in" data-form="historia" novalidate>
+      <h2 class="mg-h2">História · capítulo ${cap.n} de ${s.meta}</h2>
+      ${batida}
+      <div class="mg-campo"><label for="h-ideia">Direção para a IA (opcional)</label>
+        <input class="mg-input" id="h-ideia" name="ideia" maxlength="600" value="${esc(cap.ideia)}" placeholder="Ex.: mais tensão; terminar com Golias rindo do exército"></div>
+      <div class="mg-acoes mg-mt"><button type="button" class="mg-btn mg-pri" data-acao="escrever-ia"${d.ia ? "" : " disabled"}>${cap.historia ? "Reescrever com IA" : "Escrever com IA"}</button>
+        <span class="mg-sub">A IA lê a bíblia, o plano e tudo o que já aconteceu.</span></div>
+      <div class="mg-campo"><label for="h-titulo">Título do capítulo</label>
+        <input class="mg-input" id="h-titulo" name="titulo" maxlength="80" value="${esc(cap.titulo)}"></div>
+      <div class="mg-campo"><label for="h-historia">Narração</label>
+        <textarea class="mg-input mg-historia" id="h-historia" name="historia" maxlength="5000" data-historia aria-describedby="h-contagem">${esc(cap.historia)}</textarea>
+        <p id="h-contagem" data-contagem>${contagem(cap.palavras, d.formato)}</p></div>
+      <div class="mg-campo"><label for="h-resumo">Resumo (2 frases; a IA usa para lembrar o que aconteceu)</label>
+        <textarea class="mg-input" id="h-resumo" name="resumo" maxlength="600">${esc(cap.resumo)}</textarea></div>
+      <div class="mg-acoes mg-mt"><button type="submit" class="mg-btn mg-sec">Salvar capítulo</button></div>
+      <p class="mg-erro mg-mt" id="h-erro" aria-live="polite"></p>
+      ${sugestoes}
+    </form>`;
+}
+
+function painelQuadros(d) {
+  const { cap } = d;
+  let situacao;
+  if (estado.roteiro.ocupado === "quadros") situacao = chip("rodando", "Atualizando os prompts com a história…");
+  else if (!cap.historia) situacao = chip("espera", "Escreva a história: os prompts aparecem aqui");
+  else if (cap.sem_quadros) situacao = chip("at", "Ainda sem quadros para esta história");
+  else if (cap.desatualizado) situacao = chip("at", "A história mudou: os prompts vão ser refeitos");
+  else situacao = chip("ok", "Em dia com a história");
+  const refazer = cap.historia && d.ia && estado.roteiro.ocupado !== "quadros"
+    ? `<button type="button" class="mg-btn mg-sec mg-sm" data-acao="atualizar-quadros">${cap.sem_quadros ? "Criar prompts" : "Refazer prompts"}</button>`
+    : "";
+  const pendentes = d.serie.fichas_pendentes
+    ? `<p class="mg-aviso mg-c-at mg-mt">${plural(d.serie.fichas_pendentes, "ficha da bíblia ainda está", "fichas da bíblia ainda estão")} sem a versão em inglês: salve a bíblia para atualizar.</p>`
+    : "";
+  const quadros = cap.quadros.map((q, i) => {
+    const chips = [
+      ...q.personagens.map((p) => chip("in", p)),
+      q.cenario ? chip("espera", q.cenario) : "",
+      ...q.referencias.map((r) => `<span class="mg-chip mg-c-ne" title="Anexe esta imagem de referência no gerador">Anexe: ${esc(r.split("/").pop())}</span>`),
+    ].join("");
+    return `
+      <li class="mg-quadro">
+        <div class="mg-entre"><p class="mg-forte">Quadro ${q.n}</p>
+          <button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-prompt" data-i="${i}">Copiar prompt</button></div>
+        <p class="mg-sub mg-trecho">“${esc(q.trecho)}”</p>
+        <div class="mg-legenda">${chips}</div>
+        <pre class="mg-prompt">${esc(q.prompt)}</pre>
+      </li>`;
+  }).join("");
+  return `
+    <div class="mg-entre"><h2 class="mg-h2">Prompts dos quadros</h2>
+      ${cap.quadros.length ? '<button type="button" class="mg-btn mg-sec mg-sm" data-acao="copiar-todos">Copiar todos</button>' : ""}</div>
+    <p class="mg-sub">Um prompt de imagem por quadro. Aparência e roupa vêm da bíblia, iguais em todos os capítulos.</p>
+    <div class="mg-acoes mg-mt">${situacao}${refazer}</div>
+    ${pendentes}
+    <ol class="mg-quadros mg-mt">${quadros}</ol>`;
+}
+
+function linhaItem(tipo, item, i) {
+  const pers = tipo === "personagens";
+  const campos = pers
+    ? [["nome", "Nome", 60], ["aparencia", "Aparência (rosto, cabelo, corpo, idade)", 400], ["roupas", "Roupas e acessórios fixos", 400], ["personalidade", "Personalidade", 400]]
+    : [["nome", "Nome do lugar", 60], ["descricao", "Como é o lugar", 400]];
+  const id = `${tipo}-${i}`;
+  const ficha = item.ficha_en
+    ? `<p class="mg-sub mg-largura">${item.ficha_ok ? "No prompt" : "No prompt (vai ser atualizado ao salvar)"}: <i>${esc(item.ficha_en)}</i></p>`
+    : '<p class="mg-sub mg-largura">A ficha em inglês para o prompt é criada ao salvar.</p>';
+  return `
+    <fieldset class="mg-item" data-item="${tipo}" data-id="${esc(item.id || "")}" data-ficha="${esc(item.ficha || "")}">
+      <legend class="mg-oculto">${pers ? "Personagem" : "Cenário"} ${i + 1}</legend>
+      ${campos.map(([nome, rotulo, max]) => `<div class="mg-campo"><label for="${id}-${nome}">${rotulo}</label>
+        <input class="mg-input" id="${id}-${nome}" data-campo="${nome}" maxlength="${max}" value="${esc(item[nome] || "")}"></div>`).join("")}
+      ${ficha}
+      <button type="button" class="mg-btn mg-ghost mg-sm" data-acao="remover-item">Remover</button>
+    </fieldset>`;
+}
+
+function boxBiblia(d) {
+  const s = d.serie;
+  return `
+    <details class="mg-card mg-mt mg-in mg-detalhes"${s.fichas_pendentes ? " open" : ""}>
+      <summary class="mg-h2">Bíblia da série</summary>
+      <p class="mg-sub">É a memória fixa da série: mudou aqui, todos os prompts mudam junto. Escreva em português; a ficha em inglês para o gerador de imagem é feita ao salvar.</p>
+      <form data-form="biblia" novalidate>
+        <h3 class="mg-h3 mg-mt">Personagens</h3>
+        <div class="mg-itens" data-lista="personagens">${s.personagens.map((p, i) => linhaItem("personagens", p, i)).join("")}</div>
+        <button type="button" class="mg-btn mg-sec mg-sm mg-mt" data-acao="novo-item" data-tipo="personagens">+ Personagem</button>
+        <h3 class="mg-h3 mg-mt">Cenários</h3>
+        <div class="mg-itens" data-lista="cenarios">${s.cenarios.map((c, i) => linhaItem("cenarios", c, i)).join("")}</div>
+        <button type="button" class="mg-btn mg-sec mg-sm mg-mt" data-acao="novo-item" data-tipo="cenarios">+ Cenário</button>
+        <h3 class="mg-h3 mg-mt">Estilo e regras</h3>
+        <div class="mg-campo"><label for="b-estilo">Estilo da imagem (em inglês, vai no começo de todo prompt)</label>
+          <textarea class="mg-input" id="b-estilo" name="estilo" maxlength="600" aria-describedby="e-estilo">${esc(s.estilo)}</textarea><p class="mg-erro" id="e-estilo"></p></div>
+        <div class="mg-campo"><label for="b-evitar">O que evitar nas imagens</label>
+          <input class="mg-input" id="b-evitar" name="evitar" maxlength="400" value="${esc(s.evitar)}"></div>
+        <div class="mg-campo"><label for="b-premissa">Premissa</label>
+          <textarea class="mg-input" id="b-premissa" name="premissa" maxlength="2000">${esc(s.premissa)}</textarea></div>
+        <div class="mg-campo"><label for="b-regras">Regras da série (a IA segue em todo capítulo)</label>
+          <textarea class="mg-input" id="b-regras" name="regras" maxlength="3000">${esc(s.regras)}</textarea></div>
+        <div class="mg-campo"><label for="b-meta">Quantos capítulos</label>
+          <input class="mg-input mg-curto" id="b-meta" name="meta" type="number" min="1" max="200" value="${s.meta}" aria-describedby="e-meta"><p class="mg-erro" id="e-meta"></p></div>
+        <div class="mg-acoes mg-mt"><button type="submit" class="mg-btn mg-pri">Salvar bíblia</button></div>
+        <p class="mg-erro mg-mt" id="b-erro" aria-live="polite"></p>
+      </form>
+    </details>`;
+}
+
+function boxArco(d) {
+  const s = d.serie;
+  const linhas = s.arco.map((a) => `${a.n} | ${a.titulo} | ${a.resumo}`).join("\n");
+  return `
+    <details class="mg-card mg-mt mg-in mg-detalhes">
+      <summary class="mg-h2">Arco da série · ${s.arco.length} de ${s.meta} capítulos planejados</summary>
+      <p class="mg-sub">O plano que impede a história de se perder: cada capítulo novo segue a sua linha. Os capítulos já escritos são mantidos ao replanejar.</p>
+      <div class="mg-acoes mg-mt"><button type="button" class="mg-btn mg-sec" data-acao="planejar-arco"${d.ia ? "" : " disabled"}>${s.arco.length ? "Replanejar com IA" : `Planejar os ${s.meta} capítulos com IA`}</button></div>
+      <form data-form="arco" class="mg-mt" novalidate>
+        <div class="mg-campo"><label for="a-arco">Um capítulo por linha: número | título | resumo</label>
+          <textarea class="mg-input mg-arco" id="a-arco" name="arco" placeholder="1 | O caçula ungido | Samuel unge Davi diante dos irmãos.">${esc(linhas)}</textarea></div>
+        <div class="mg-acoes mg-mt"><button type="submit" class="mg-btn mg-sec">Salvar arco</button></div>
+        <p class="mg-erro mg-mt" id="a-erro" aria-live="polite"></p>
+      </form>
+    </details>`;
+}
+
+/* ---------- ações do roteiro */
+
+function statusRoteiro(texto, tipo = "rodando") {
+  const alvo = document.getElementById("r-status");
+  if (alvo) alvo.innerHTML = texto ? chip(tipo, texto) : "";
+}
+function erroRoteiro(erro) {
+  statusRoteiro("", "");
+  const alvo = document.getElementById("r-status");
+  if (alvo) alvo.innerHTML = `<p class="mg-aviso mg-c-cr">${esc(erro.message)}</p>`;
+}
+const serieAtual = () => estado.roteiro.dados && estado.roteiro.dados.serie;
+const capAtual = () => estado.roteiro.dados && estado.roteiro.dados.cap;
+
+async function pedidoIA(tipo, extra = {}) {
+  const q = new URLSearchParams({ tipo, serie: serieAtual().id, ...extra });
+  return api(`/api/roteiro/pedido?${q}`);
+}
+
+/** Redesenha só o box dos prompts (a história, que pode estar sendo digitada, fica intacta). */
+async function redesenharQuadros() {
+  const s = serieAtual();
+  const c = capAtual();
+  const d = await api(`/api/roteiro?serie=${encodeURIComponent(s.id)}&cap=${c.n}`);
+  estado.roteiro.dados = d;
+  const caixa = tela.querySelector("[data-quadros]");
+  if (caixa) {
+    caixa.innerHTML = painelQuadros(d);
+    aplicarEstilos(caixa);
+  }
+}
+
+/** Traduz para o inglês as fichas da bíblia que mudaram (uma chamada para todas). */
+async function atualizarFichas() {
+  const s = serieAtual();
+  if (!s.fichas_pendentes || !estado.roteiro.dados.ia) return;
+  statusRoteiro("Atualizando as fichas em inglês da bíblia…");
+  const p = await pedidoIA("fichas");
+  const r = await window.IA.gerar("fichas", p.texto, p);
+  const fichas = {};
+  (r.fichas || []).forEach((f) => { if (f && f.id) fichas[f.id] = f.ficha_en; });
+  await enviar(`/api/series/${encodeURIComponent(s.id)}`, { fichas, ...(r.evitar_en ? { evitar_en: r.evitar_en } : {}) });
+}
+
+/** Salva a história e refaz os quadros a partir dela. */
+async function atualizarQuadros(historia) {
+  const s = serieAtual();
+  const c = capAtual();
+  if (!historia.trim() || !estado.roteiro.dados.ia) return;
+  estado.roteiro.ocupado = "quadros";
+  await redesenharQuadros();
+  try {
+    await atualizarFichas();
+    statusRoteiro("Dividindo a história em quadros…");
+    const p = await pedidoIA("quadros", { historia });
+    const r = await window.IA.gerar("quadros", p.texto, p);
+    await enviar(`/api/capitulos/${encodeURIComponent(s.id)}/${c.n}`, { quadros: r.quadros || [], para: historia });
+    statusRoteiro("Prompts em dia com a história.", "ok");
+  } finally {
+    estado.roteiro.ocupado = null;
+    await redesenharQuadros();
+  }
+}
+
+function lerHistoria(form) {
+  return {
+    titulo: form.elements.titulo.value.trim(),
+    historia: form.elements.historia.value.trim(),
+    resumo: form.elements.resumo.value.trim(),
+    ideia: form.elements.ideia.value.trim(),
+  };
+}
+
+async function salvarHistoria(form) {
+  const s = serieAtual();
+  const c = capAtual();
+  const dados = lerHistoria(form);
+  await enviar(`/api/capitulos/${encodeURIComponent(s.id)}/${c.n}`, dados);
+  estado.formSujo = false;
+  return dados;
+}
+
+/* o capítulo mudou na mão: depois de uma pausa na digitação, salva; se foi a história, refaz os prompts */
+function agendarQuadros(mudouHistoria) {
+  cancelarAgendamento();
+  const caixa = tela.querySelector("[data-quadros] .mg-acoes");
+  if (mudouHistoria && caixa && caixa.firstElementChild && capAtual() && capAtual().quadros.length) {
+    caixa.firstElementChild.outerHTML = chip("at", "A história mudou: os prompts vão ser refeitos");
+  }
+  estado.roteiro.timer = setTimeout(async () => {
+    estado.roteiro.timer = null;
+    const form = tela.querySelector('form[data-form="historia"]');
+    if (!form) return;
+    if (estado.roteiro.ocupado) {
+      agendarQuadros(false); // a IA está trabalhando: tenta de novo daqui a pouco
+      return;
+    }
+    try {
+      const antes = capAtual();
+      const dados = await salvarHistoria(form);
+      if (dados.historia && (dados.historia !== antes.historia || antes.desatualizado || antes.sem_quadros)) await atualizarQuadros(dados.historia);
+      else {
+        statusRoteiro("Salvo.", "ok");
+        await redesenharQuadros();
+      }
+    } catch (erro) {
+      erroRoteiro(erro);
+    }
+  }, ESPERA_DIGITACAO_MS);
+}
+
+function cancelarAgendamento() {
+  clearTimeout(estado.roteiro.timer);
+  estado.roteiro.timer = null;
+}
+
+/** Antes de sair do capítulo: o que foi digitado e ainda não foi salvo é salvo agora. */
+async function salvarPendenteRoteiro() {
+  if (!estado.roteiro.timer) return;
+  cancelarAgendamento();
+  const form = tela.querySelector('form[data-form="historia"]');
+  if (form && capAtual()) {
+    try {
+      await salvarHistoria(form);
+    } catch {
+      /* sem conexão: o texto continua na tela anterior do navegador */
+    }
+  }
+}
+
+async function comOcupado(botao, texto, tarefa) {
+  if (estado.roteiro.ocupado) return;
+  estado.roteiro.ocupado = "ia";
+  const soltar = ocupar(botao, texto);
+  try {
+    await tarefa();
+  } catch (erro) {
+    erroRoteiro(erro);
+  } finally {
+    estado.roteiro.ocupado = null;
+    if (botao.isConnected) soltar();
+  }
+}
+
+function itensDaBiblia(form, tipo) {
+  return [...form.querySelectorAll(`[data-item="${tipo}"]`)].map((fs) => {
+    const item = { id: fs.dataset.id || undefined, ficha: fs.dataset.ficha || undefined };
+    fs.querySelectorAll("[data-campo]").forEach((el) => { item[el.dataset.campo] = el.value.trim(); });
+    return item;
+  }).filter((x) => x.nome);
+}
+
+Object.assign(ACOES, {
+  "escrever-ia": (b) => {
+    if (capAtual().historia && b.dataset.confirmar !== "sim") {
+      b.dataset.confirmar = "sim";
+      b.textContent = "Clique de novo: a história atual será substituída";
+      setTimeout(() => {
+        if (b.isConnected && !b.disabled) {
+          b.dataset.confirmar = "";
+          b.textContent = "Reescrever com IA";
+        }
+      }, 6000);
+      return undefined;
+    }
+    return escreverComIA(b);
+  },
+});
+
+const escreverComIA = (b) => comOcupado(b, "Escrevendo…", async () => {
+    cancelarAgendamento();
+    const s = serieAtual();
+    const c = capAtual();
+    const form = b.closest("form");
+    const ideia = form.elements.ideia.value.trim();
+    statusRoteiro(`Escrevendo o capítulo ${c.n}…`);
+    await atualizarFichas();
+    const p = await pedidoIA("historia", { cap: String(c.n), ideia });
+    const r = await window.IA.gerar("historia", p.texto, p);
+    const nomes = new Set([...s.personagens, ...s.cenarios].map((x) => x.nome.toLowerCase()));
+    estado.roteiro.sugestoes = [
+      ...(r.novos_personagens || []).map((x) => ({ ...x, tipo: "personagem" })),
+      ...(r.novos_cenarios || []).map((x) => ({ ...x, tipo: "cenario" })),
+    ].filter((x) => x.nome && !nomes.has(String(x.nome).toLowerCase())).slice(0, 6);
+    await enviar(`/api/capitulos/${encodeURIComponent(s.id)}/${c.n}`, { titulo: r.titulo || "", historia: r.historia || "", resumo: r.resumo || "", ideia });
+    estado.formSujo = false;
+    await navegar(false);
+    estado.roteiro.ocupado = null;
+    await atualizarQuadros(r.historia || "");
+  });
+
+Object.assign(ACOES, {
+  "atualizar-quadros": (b) => comOcupado(b, "Refazendo…", async () => {
+    cancelarAgendamento();
+    const form = tela.querySelector('form[data-form="historia"]');
+    const { historia } = await salvarHistoria(form);
+    estado.roteiro.ocupado = null;
+    await atualizarQuadros(historia);
+  }),
+  "copiar-prompt": async (b) => {
+    const q = capAtual().quadros[Number(b.dataset.i)];
+    await copiarTexto(b, q ? q.prompt : "");
+  },
+  "copiar-todos": async (b) => {
+    await copiarTexto(b, capAtual().quadros.map((q) => `Quadro ${q.n}\n${q.prompt}`).join("\n\n"));
+  },
+  "aceitar-sugestao": (b) => comOcupado(b, "Adicionando…", async () => {
+    const x = estado.roteiro.sugestoes[Number(b.dataset.i)];
+    if (!x) return;
+    await enviar(`/api/series/${encodeURIComponent(serieAtual().id)}/itens`, x.tipo === "cenario"
+      ? { tipo: "cenario", nome: x.nome, descricao: x.descricao || "" }
+      : { nome: x.nome, aparencia: x.aparencia || "", roupas: x.roupas || "", personalidade: x.personalidade || "" });
+    estado.roteiro.sugestoes = estado.roteiro.sugestoes.filter((y) => y !== x);
+    estado.roteiro.ocupado = null;
+    await navegar(false);
+    statusRoteiro(`${x.nome} entrou na bíblia. Refaça os prompts para incluí-lo nos quadros.`, "ok");
+  }),
+  "novo-item": (b) => {
+    const tipo = b.dataset.tipo;
+    const lista = b.closest("form").querySelector(`[data-lista="${tipo}"]`);
+    lista.insertAdjacentHTML("beforeend", linhaItem(tipo, {}, lista.children.length + Date.now() % 1000));
+    lista.lastElementChild.querySelector("input").focus();
+    estado.formSujo = true;
+  },
+  "remover-item": (b) => {
+    b.closest("fieldset").remove();
+    estado.formSujo = true;
+  },
+  "planejar-arco": (b) => comOcupado(b, "Planejando…", async () => {
+    statusRoteiro(`Planejando os ${serieAtual().meta} capítulos…`);
+    const p = await pedidoIA("arco");
+    const r = await window.IA.gerar("arco", p.texto, p);
+    await enviar(`/api/series/${encodeURIComponent(serieAtual().id)}`, { arco: r.arco || [] });
+    estado.mensagem = "Arco planejado. Cada capítulo novo segue a sua linha do plano.";
+    estado.roteiro.ocupado = null;
+    await navegar(false);
+  }),
+  "capitulo-para-fila": () => {
+    const s = serieAtual();
+    const c = capAtual();
+    estado.prefill = { canal: s.canal.id, titulo: `${c.titulo || `Capítulo ${c.n}`}`.slice(0, 120), serie: s.nome, descricao: c.resumo || "" };
+    location.hash = "#producao";
+  },
+});
+
+async function copiarTexto(b, textoCopiado) {
+  const original = b.textContent;
+  try {
+    await navigator.clipboard.writeText(textoCopiado);
+    b.textContent = "Copiado ✓";
+  } catch {
+    const pre = b.closest("li")?.querySelector("pre");
+    if (pre) window.getSelection().selectAllChildren(pre);
+    b.textContent = "Selecione e copie";
+  }
+  setTimeout(() => { if (b.isConnected) b.textContent = original; }, 2000);
+}
+
+Object.assign(FORMULARIOS, {
+  async serie(form) {
+    const dados = Object.fromEntries(new FormData(form));
+    if ((dados.nome || "").trim().length < 2) {
+      marcarErros(form, { nome: "Escreva o nome da série (mínimo 2 letras)." });
+      return;
+    }
+    const soltar = ocupar(form.querySelector('[type="submit"]'), "Criando…");
+    try {
+      const r = await enviar("/api/series", { nome: dados.nome.trim(), canal: dados.canal, premissa: (dados.premissa || "").trim(), meta: Number(dados.meta) || 50 });
+      estado.formSujo = false;
+      estado.levar = `Série ${r.nome} criada com os personagens do canal. Confira a bíblia e planeje o arco.`;
+      location.hash = rotaRoteiro(r.id);
+    } catch (erro) {
+      soltar();
+      if (erro.dados && erro.dados.erros) marcarErros(form, erro.dados.erros);
+      else form.querySelector("#e-geral").textContent = erro.message;
+    }
+  },
+  async historia(form) {
+    cancelarAgendamento();
+    const botao = form.querySelector('[type="submit"]');
+    await comOcupado(botao, "Salvando…", async () => {
+      const { historia } = await salvarHistoria(form);
+      statusRoteiro("Capítulo salvo.", "ok");
+      const c = capAtual();
+      estado.roteiro.ocupado = null;
+      if (historia && (c.sem_quadros || window.Roteiro.hashTexto(historia) !== window.Roteiro.hashTexto(c.historia) || c.desatualizado)) await atualizarQuadros(historia);
+      else await redesenharQuadros();
+    });
+  },
+  async biblia(form) {
+    const botao = form.querySelector('[type="submit"]');
+    form.querySelector("#b-erro").textContent = "";
+    await comOcupado(botao, "Salvando…", async () => {
+      const corpo = {
+        personagens: itensDaBiblia(form, "personagens"),
+        cenarios: itensDaBiblia(form, "cenarios"),
+        estilo: form.elements.estilo.value.trim(), evitar: form.elements.evitar.value.trim(),
+        premissa: form.elements.premissa.value.trim(), regras: form.elements.regras.value.trim(),
+        meta: Number(form.elements.meta.value),
+      };
+      try {
+        await enviar(`/api/series/${encodeURIComponent(serieAtual().id)}`, corpo);
+      } catch (erro) {
+        if (erro.dados && erro.dados.erros) marcarErros(form, erro.dados.erros);
+        throw erro;
+      }
+      estado.formSujo = false;
+      await redesenharQuadros();
+      await atualizarFichas();
+      estado.mensagem = "Bíblia salva. Os prompts de todos os capítulos já usam a versão nova.";
+      estado.roteiro.ocupado = null;
+      await navegar(false);
+    });
+  },
+  async arco(form) {
+    const linhas = form.elements.arco.value.split("\n").map((l) => l.trim()).filter(Boolean);
+    const arco = linhas.map((l) => {
+      const [n, titulo = "", ...resto] = l.split("|").map((x) => x.trim());
+      return { n: Number(n), titulo, resumo: resto.join(" | ") };
+    });
+    const ruim = arco.find((a) => !Number.isInteger(a.n) || a.n < 1);
+    if (ruim) {
+      form.querySelector("#a-erro").textContent = "Cada linha começa com o número do capítulo: 1 | Título | resumo";
+      return;
+    }
+    await comOcupado(form.querySelector('[type="submit"]'), "Salvando…", async () => {
+      await enviar(`/api/series/${encodeURIComponent(serieAtual().id)}`, { arco });
+      estado.formSujo = false;
+      estado.mensagem = "Arco salvo.";
+      estado.roteiro.ocupado = null;
+      await navegar(false);
+    });
+  },
+});
+
 /* ------------------------------------------------------------------ eventos */
 
 tela.addEventListener("click", (ev) => {
@@ -1440,12 +2013,28 @@ tela.addEventListener("submit", (ev) => {
 
 /* "Começar de" no formulário de canal: recomeça o formulário com o modelo escolhido */
 tela.addEventListener("change", (ev) => {
+  if (ev.target.matches("[data-roteiro-serie]")) {
+    location.hash = rotaRoteiro(ev.target.value);
+    return;
+  }
+  if (ev.target.matches("[data-roteiro-cap]")) {
+    location.hash = rotaRoteiro(serieAtual().id, ev.target.value);
+    return;
+  }
   if (!ev.target.matches("[data-modelo]")) return;
   const id = ev.target.value;
   location.hash = `#canais/novo${id ? `/${encodeURIComponent(id)}` : ""}`;
 });
 
 tela.addEventListener("input", (ev) => {
+  const historia = ev.target.closest('form[data-form="historia"]');
+  if (historia && estado.roteiro.dados) {
+    if (ev.target.matches("[data-historia]")) {
+      const p = historia.querySelector("[data-contagem]");
+      p.innerHTML = contagem(window.Roteiro.palavras(ev.target.value), estado.roteiro.dados.formato);
+    }
+    agendarQuadros(ev.target.matches("[data-historia]"));
+  }
   if (ev.target.closest("form")) {
     estado.formSujo = true;
     estado.mensagem = null;
@@ -1480,7 +2069,8 @@ setInterval(() => {
   const tocando = [...tela.querySelectorAll("video")].some((v) => !v.paused);
   const ocupado = estado.formSujo || estado.refazendo || tocando || document.activeElement?.closest("form")
     || document.activeElement?.tagName === "IFRAME";
-  if (!ocupado && ["inicio", "producao", "saude"].includes(estado.rota)) navegar(false);
+  const roteiro = estado.rota === "producao" && estado.param.startsWith("roteiro");
+  if (!ocupado && !roteiro && ["inicio", "producao", "saude"].includes(estado.rota)) navegar(false);
 }, 60_000);
 
 /* a fonte decide se mostra o login do Google antes das telas */

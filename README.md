@@ -19,6 +19,12 @@ contas separados. Roda inteiro no **Firebase** (Hosting + login Google + Firesto
 - **Canais criados no painel.** Em **Canais › Novo canal**: nome, cor, horários, redes e duração.
   Os modelos (`web/dados/modelos.json`: Bíblico e Curiosidades) já trazem instruções de roteiro,
   estilo visual e personagens.
+- **Roteiro com IA** (Produção › Roteiro com IA): a IA (Gemini, pelo Firebase) escreve a história
+  de cada capítulo num box e, no outro, os prompts de imagem de cada quadro. Mudou a história, os
+  prompts se refazem sozinhos. A **bíblia da série** guarda aparência, roupas, personalidade e
+  lugares; a ficha de cada personagem entra no prompt palavra por palavra, então ele é o mesmo do
+  capítulo 1 ao 50. O **arco** planeja todos os capítulos, e cada capítulo novo recebe a bíblia, o
+  plano, o resumo de tudo o que já aconteceu e o capítulo anterior inteiro.
 - **Cadastro controlado por você.** Em **Mais › Plataforma** (só aparece para o dono, o e-mail em
   `web/config.js > admin`): deixar o cadastro só para convidados (padrão) ou aberto para qualquer
   conta Google, e pausar um estúdio. Você vê quem tem estúdio, mas não os vídeos nem as contas dele.
@@ -28,12 +34,14 @@ contas separados. Roda inteiro no **Firebase** (Hosting + login Google + Firesto
 ```
 web/                 site publicado no Firebase Hosting
   index.html         o painel
-  config.js          firebaseConfig + e-mail do dono da plataforma (não é segredo)
+  config.js          firebaseConfig, dono da plataforma, chave de site do reCAPTCHA, modelos da IA (nada disso é segredo)
   css/app.css
   js/app.js          telas, rotas por hash e formulários
   js/motor.js        as regras: canais, fila, horários, publicação, contas, cadastro
+  js/roteiro.js      séries, bíblia, capítulos, prompts de cada quadro e os pedidos para a IA
+  js/ia.js           Gemini pelo Firebase AI Logic (com App Check); respostas de mentira na demonstração
   js/dados.js        Firestore (estudios/{uid}/...) ou demonstração no navegador
-  js/semente.js      dados de exemplo da demonstração
+  js/semente.js      dados de exemplo da demonstração (inclui a série "Temporada Davi")
   dados/modelos.json     modelos de canal (roteiro, estilo visual, personagens, formato 61–80 s)
   dados/plataformas.json programas, requisitos e links oficiais de cada rede (conferido em 31/10/2026)
 firestore.rules      cada conta só lê e grava o próprio estúdio
@@ -72,6 +80,23 @@ dados de exemplo só no navegador. Em **Mais** dá para restaurar o exemplo ou c
 4. **Aprovação:** aprovar agenda no próximo horário livre do canal; tudo tem **Desfazer**.
 5. **Plataformas › Para publicar:** copie a legenda de cada rede, abra a página oficial de envio,
    publique e cole o link do post.
+
+## Roteiro com IA: como usar
+
+1. **Produção › Roteiro com IA › Nova série:** nome, canal, premissa e quantos capítulos (50 por
+   padrão). A série nasce com os personagens e o estilo visual do canal.
+2. **Bíblia da série:** confira aparência, roupas e personalidade de cada personagem e os cenários.
+   Ao salvar, a IA faz a ficha em inglês que vai nos prompts.
+3. **Arco:** "Planejar com IA" escreve o plano de todos os capítulos (dá para editar à mão).
+4. **História:** escolha o capítulo, dê uma direção se quiser e clique em **Escrever com IA**. Os
+   prompts aparecem no box ao lado; edite a narração à vontade, que eles se refazem depois de uma
+   pausa na digitação.
+5. **Imagens:** copie cada prompt para o gerador de imagens e anexe a ficha do personagem indicada
+   ("Anexe: davi_ficha.png"). Montou o vídeo? **Adicionar vídeo pronto** já vai preenchido.
+
+A IA usa a cota grátis do Gemini do projeto (Firebase AI Logic, plano Spark). Se a cota do modelo
+principal (`gemini-3.8-flash`) acabar, o painel tenta o mais leve (`gemini-3.5-flash-lite`); os
+dois ficam em `web/config.js`.
 
 ## Mudar modelos e plataformas
 
