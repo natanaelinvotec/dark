@@ -165,12 +165,14 @@ def cmd_configurar(args: argparse.Namespace) -> int:
 
     senha = None
     if args.trocar_senha or not atuais.get("ESTUDIO_SENHA_HASH"):
-        if not interativo:
-            print("Rode no terminal para escolher a senha do painel.", file=sys.stderr)
-            return 1
-        senha = _pedir_senha()
-        if senha is None:
-            return 1
+        if interativo:
+            senha = _pedir_senha()
+            if senha is None:
+                return 1
+        else:
+            # ex.: preparo automático do Codespaces; o resto do .env é gravado mesmo assim
+            print("Senha do painel ainda não definida: rode 'uv run estudio configurar' "
+                  "num terminal.", file=sys.stderr)
 
     chaves: dict[str, str] = {}
     if interativo and not so_acesso:

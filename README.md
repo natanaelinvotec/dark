@@ -30,6 +30,7 @@ Depois, no dia a dia:
 | `parar.bat` | desliga os dois |
 | `instalar.bat` | reinstala ou muda a configuração (`uv run estudio configurar --trocar-senha` troca só a senha) |
 | `online.bat` | põe o painel num endereço seu, protegido pelo login da Cloudflare (veja "Acesso online") |
+| `enviar-github.bat` | manda o código para o GitHub (na 1ª vez troca o upload feito pelo site) |
 
 Registros ficam em `dados\logs`. Preferir fazer à mão:
 
@@ -83,6 +84,34 @@ e o Reels pela API vai até 90 s). Cada canal lista onde publica em `plataformas
   (seguidores, views…) com o progresso até a meta.
 - O painel **nunca pede nem guarda senha** das plataformas. As regras ficam em `plataformas.yaml`,
   com a data em que foram conferidas; o painel avisa quando passarem de 90 dias.
+
+## Abrir o painel pelo GitHub (Codespaces) — o jeito mais simples
+
+O GitHub guarda o código; quem **roda** o painel é o **Codespaces**, um computador na nuvem do
+próprio GitHub. O painel abre num link `https://…-8787.app.github.dev`, só para você (pede o seu
+login do GitHub). Não precisa de domínio, Cloudflare nem PC ligado.
+
+1. No PC, dê dois cliques em **`enviar-github.bat`** (manda o código, incluindo a pasta oculta
+   `.devcontainer`, que o upload pelo site não leva).
+2. Em https://github.com/natanaelinvotec/dark → botão verde **Code** → aba **Codespaces** →
+   **Create codespace on main**. A primeira vez leva alguns minutos (instala tudo sozinho).
+3. No terminal que aparece embaixo, rode `uv run estudio configurar` (senha do painel e chaves;
+   na pergunta da pasta, só Enter) e depois `bash scripts/codespace-iniciar.sh`.
+4. O painel abre numa aba. Guarde esse link nos favoritos (no celular também).
+
+Para voltar depois: https://github.com/codespaces → clique no codespace → o painel sobe sozinho
+(aba **Portas**, porta 8787).
+
+| Limite (conta grátis) | O que fazer |
+|---|---|
+| 120 horas-núcleo/mês ≈ 60 h na máquina de 2 núcleos | Feche quando terminar; veja o uso em github.com/settings/billing |
+| Adormece após 30 min parado (painel e worker param) | Aumente para até 240 min em github.com/settings/codespaces |
+| Login do link vale 3 h | Depois disso o GitHub pede o login de novo; é normal |
+| Codespace parado por muito tempo é apagado (com o banco e os vídeos) | Abra ao menos 1 vez por mês e baixe os vídeos aprovados; nos três pontinhos do codespace use **Keep codespace** |
+
+Os arquivos ficam em `dados/drive` dentro do Codespace (o Drive do PC não existe lá). Os quadros
+do canal bíblico você arrasta para a pasta `dados/drive/Canal-Biblico/Paineis/<id>/` no
+explorador de arquivos à esquerda; os vídeos prontos você baixa pelo botão **Baixar vídeo**.
 
 ## Acesso online (qualquer navegador, sem instalar app)
 

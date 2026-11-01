@@ -1,0 +1,16 @@
+{
+  // Abre o painel pelo GitHub (Codespaces): Code > Codespaces > Create codespace on main.
+  // O painel sobe sozinho e abre numa aba (porta 8787 privada: só você, com o login do GitHub).
+  "name": "Estúdio de Canais",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "hostRequirements": { "cpus": 2 },
+  "postCreateCommand": "bash scripts/codespace-preparar.sh",
+  "postStartCommand": "bash scripts/codespace-iniciar.sh",
+  "forwardPorts": [8787],
+  "portsAttributes": {
+    "8787": { "label": "Painel", "onAutoForward": "openBrowser" }
+  },
+  "containerEnv": {
+    "PYTHONUTF8": "1"
+  }
+}
