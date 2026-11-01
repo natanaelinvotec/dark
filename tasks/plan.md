@@ -1,6 +1,9 @@
 # Plano: Estúdio de Canais Automatizado
 
 > Versão 1.1 · 31/10/2026 · especificação técnica em `SPEC.md` · tarefas em `tasks/todo.md`
+>
+> **Atenção:** a estratégia de canais abaixo continua valendo. A parte técnica (Python, VPS, painel
+> local) foi substituída pela versão Firebase descrita no `SPEC.md` v2.
 
 ## 1. Estratégia (resumo de uma página)
 

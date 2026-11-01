@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Só o dono (conta Google com e-mail verificado) lê e grava. Troque o e-mail aqui E em
+// web/config.js se for outra conta. Publicar: firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function dono() {
+      return request.auth != null
+        && request.auth.token.email == 'natanael.invotec@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    // auditoria: só cria e lê; ninguém edita nem apaga pelo navegador
+    match /acoes/{id} {
+      allow read, create: if dono();
+    }
+    match /eventos/{id} {
+      allow read, create: if dono();
+    }
+
+    match /{colecao}/{id} {
+      allow read, write: if dono()
+        && colecao in ['videos', 'contas', 'custos', 'metricas', 'receitas', 'campanhas', 'config'];
+    }
+  }
+}

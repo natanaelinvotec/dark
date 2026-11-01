@@ -9,21 +9,16 @@ permissions:
   contents: read
 
 jobs:
-  testes:
+  painel:
     runs-on: ubuntu-latest
     steps:
-      # Recomendado: fixar as actions por SHA depois do primeiro uso.
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          python-version: "3.12"
-      - name: FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - name: Dependências
-        run: uv sync --all-extras
-      - name: Lint
-        run: uv run ruff check .
-      - name: Testes
-        run: uv run pytest -q
-      - name: Auditoria de dependências
-        run: uv run pip-audit
+          node-version: "22"
+      - name: Sintaxe do painel
+        run: for f in web/config.js web/js/*.js; do node --check "$f"; done
+      - name: JSON válidos
+        run: for f in web/dados/*.json firebase.json firestore.indexes.json .firebaserc; do node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))"; done
+      - name: Testes do motor
+        run: node --test tests/*.test.js

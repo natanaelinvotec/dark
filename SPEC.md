@@ -1,160 +1,65 @@
 # Spec: Estúdio de Canais
 
-> Versão 1.1 · 31/10/2026 · Estratégia e riscos em `tasks/plan.md`; tarefas em `tasks/todo.md`; desenho das telas no mockup "Painel do Estúdio de Canais".
-> 1.1: seis plataformas (YouTube, TikTok, Facebook, Instagram, Kwai, Snapchat) com publicação assistida; vídeos de 61–80 s; instalação com um clique no Windows.
+> Versão 2 · 31/10/2026 · Firebase. A versão 1 (Python + painel local + acesso pelo PC) está no
+> histórico do Git (`git show 299ab08`). Estratégia em `tasks/plan.md`; tarefas em `tasks/todo.md`.
 
-## Premissas (já combinadas)
-1. Um único usuário (o dono). Acesso remoto ao painel por **Cloudflare Tunnel + Access** (endereço próprio, código no e-mail do dono) ou pela **Tailscale**, sempre **e** com a senha do painel. Nenhuma porta aberta no roteador.
-2. Arquivos de trabalho na pasta do **Google Drive sincronizada** no PC/VPS ("Drive para computador"); o programa lê e grava como pasta local.
-3. Sem Firebase. Estado em **SQLite**.
-4. Publicação v1 = **pacote de agendamento** (pasta do dia + CSV) + **publicação assistida** na tela Plataformas: o painel baixa o MP4, copia a legenda no formato de cada rede e abre a página oficial de envio; o dono sobe e cola o link. APIs de publicação só depois de auditoria/aprovação de cada plataforma.
-5. Quadros do canal bíblico e ganchos animados são **feitos à mão** (assinatura Google AI Pro, sem API); o pipeline prepara os prompts e espera os arquivos.
-6. Duração-alvo **61–80 s**: rende em todas as redes (TikTok ≥ 60 s; Reels pela API ≤ 90 s; Spotlight ≥ 30 s).
-7. Roda no **PC do dono** (ligado com `iniciar.bat`).
-8. **Painel online** em `https://natanaelinvotec.github.io/dark/` (GitHub Pages, montado pelo Actions): mesmas telas; login Google; dados no Firestore (`telas/` publicadas pela ponte do PC, `comandos/` criados pelo painel e executados pelo PC com as mesmas rotas da API); prévias no Google Drive (`drive.file`). Sem Firebase configurado, abre em modo demonstração. Isto revisa a premissa 3 só para o espelho das telas: o estado de verdade continua no SQLite do PC.
-
-## Mapa de módulos
-
-| Módulo | Responsabilidade | Depende de |
-|---|---|---|
-| `nucleo` | Configuração, canais (YAML), banco SQLite, eventos, custos, ações da fila | — |
-| `pipeline` | Etapas: roteiro, checagem, quadros, gancho, voz, montagem, testes; worker; CLI | `nucleo` |
-| `painel` | API JSON + login + front HTML/CSS/JS do mockup | `nucleo` (lê o que o pipeline grava) |
-
-Ordem: `nucleo` → `pipeline` e `painel` (independentes entre si; conversam só pelo banco).
+## Premissas
+1. Um único usuário (o dono). Entra com a conta Google; as regras do Firestore só aceitam o e-mail dele.
+2. Tudo no **Firebase**: Hosting (site), Authentication (Google), Firestore (dados). Sem servidor próprio, sem PC ligado.
+3. Vídeos ficam no **Google Drive** do dono (link "qualquer pessoa com o link"); o painel toca a prévia de lá.
+4. Duração-alvo **61–80 s** (TikTok só paga a partir de 1 min; Reels pela API vai até 90 s).
+5. Publicação **assistida**: o painel copia a legenda de cada rede e abre a página oficial de envio; o dono publica e cola o link. APIs de publicação só depois de auditoria de cada plataforma.
+6. Produção automática (roteiro, voz, montagem, testes) fica para **Cloud Functions** em `functions/` (plano Blaze).
 
 ## Objetivo
+Reduzir o trabalho do dono a assistir, aprovar e publicar (≈8 min por vídeo), com os números que
+importam (metas dos programas, dinheiro, gatilho do próximo canal) num lugar só, no PC ou no celular.
 
-Reduzir o trabalho humano a **≈8 min por vídeo**: a máquina pesquisa, escreve, narra, monta e testa; o dono só assiste e aprova com um toque.
+## Módulos (web/)
 
-**Histórias de uso**
-- Como dono, gero um lote ("Temporada Davi, eps. 7 a 9, 3 vídeos") e o pipeline avança sozinho até onde depender de mim.
-- Como dono, vejo na fila cada vídeo com prévia, testes automáticos e avisos da checagem, e aprovo, peço para refazer (com nota) ou rejeito — sempre com **Desfazer**.
-- Como dono, sei quanto gastei de IA, quanto entrou e se o gatilho do próximo canal abriu.
+| Arquivo | Responsabilidade |
+|---|---|
+| `js/motor.js` | Regras puras: telas (`get`), ações (`post` → `{resposta, mudancas}`), horários, publicação, contas, validações. Roda no navegador e no Node. |
+| `js/dados.js` | `window.FONTE`: carrega o estado (Firestore ou demonstração), grava as mudanças em lote, login Google, prévia/download do Drive. |
+| `js/app.js` | Telas, rotas por hash, formulários. Só fala com `FONTE`. |
+| `js/semente.js` | Dados de exemplo da demonstração. |
+| `dados/*.json` | Canais e plataformas (editados no repositório e publicados com `firebase deploy`). |
 
-## Tech stack
-- Python 3.12 · FastAPI · Uvicorn · Pydantic 2 · PyYAML · httpx · google-genai · Pillow · tzdata · itsdangerous · faster-whisper (extra `voz`)
-- FFmpeg 6+ (binário do sistema) · SQLite (stdlib)
-- Front: HTML + CSS + JavaScript sem framework (identidade do MEGA-PAINEL-MASTER: trilho 56px `#0A1630`, Sora/Manrope, rotas por hash)
-- Ferramentas: uv (dependências e lock), pytest, ruff, pip-audit, GitHub Actions
+## Modelo de dados (Firestore)
+
+| Coleção | Documento |
+|---|---|
+| `videos/{id}` | canal, titulo, tema, serie, referencia, status, roteiro{descricao, hashtags, fontes, janelas}, duracao, horario, aviso, notaRefazer, revisaoS, driveId, etapas{nome: {status, nota}}, testes[], publicacoes{plataforma: {situacao, url, publicadoEm, atualizadoEm}}, criadoEm, atualizadoEm |
+| `contas/{canal}:{plataforma}` | usuario, url, situacao, seguranca, numeros{}, atualizadoEm |
+| `acoes/{auto}` | ts, n, video, acao, nota, de, para (auditoria; só cria) |
+| `eventos/{auto}` | ts, n, etapa, alvo, msg, nivel (console; só cria) |
+| `custos`, `receitas`, `campanhas`, `metricas` | mês/fornecedor/valor; mês/fonte/valor; clipping; data/canal/views |
+| `config/geral` | teto_mes_brl, preços, câmbio, créditos do Flow, canais_ligados{}, metricas{} |
+
+`videos.status`: `pauta → produzindo ⇄ voce → fila | reprovado → aprovado | rejeitado | refazer`;
+`aprovado → publicado` quando sai em ao menos uma rede (volta se todas forem desfeitas).
+Datas em ISO com fuso de Brasília (`-03:00`), comparáveis como texto.
 
 ## Comandos
 ```
-Tudo de uma vez ..... instalar.bat (Windows) · iniciar.bat · parar.bat
-Instalar ............ uv sync --all-extras
-Configurar .env ..... uv run estudio configurar [--dados "G:/Meu Drive/Estudio"] [--trocar-senha]
-Criar banco/pastas .. uv run estudio init
-Dados de exemplo .... ESTUDIO_DB=dados/exemplo.db uv run estudio seed-exemplo  (recusa banco com vídeos)
-Gerar hash da senha . uv run estudio senha
-Painel .............. uv run estudio painel --host 127.0.0.1 --port 8787
-Worker .............. uv run estudio worker            (ou --uma-vez)
-Gerar lote .......... uv run estudio gerar --canal curiosidades --tema "Relâmpagos do Catatumbo" --qtd 1
-Pacote do dia ....... uv run estudio pacote --data 2026-11-01
-Testes .............. uv run pytest -q          (make test)
-Lint ................ uv run ruff check .        (make lint)
-Auditoria deps ...... uv run pip-audit          (make audit)
-Docker .............. docker compose up -d
+Testes ............. node --test tests/*.test.js
+Ver local .......... npx serve web            (modo demonstração)
+Publicar ........... firebase deploy           (site + regras)
+Só as regras ....... firebase deploy --only firestore:rules
 ```
-
-## Estrutura
-```
-channels/            um YAML por canal (enabled liga/desliga; plataformas onde publica)
-plataformas.yaml     programas, requisitos, links oficiais e domínios aceitos de cada rede
-scripts/             instalar/iniciar/parar no Windows (chamados pelos .bat da raiz)
-tasks/               plan.md e todo.md
-assets/fonts/        fontes OFL da janela de missão e das legendas
-src/estudio/         núcleo + pipeline + CLI
-src/painel/          API FastAPI, segurança, consultas e front (static/)
-tests/               pytest (sem rede; ffmpeg real só nos testes marcados)
-.github/workflows/   CI: lint, testes, pip-audit
-```
-
-## Modelo de dados (SQLite)
-| Tabela | Campos principais |
-|---|---|
-| `canais` | id, nome, cor, ligado |
-| `videos` | id, canal_id, titulo, serie, referencia, tema, status, roteiro_json, duracao_s, arquivo, horario, aviso, nota_refazer, revisao_s, criado_em, atualizado_em |
-| `etapas` | (video_id, etapa) → status, nota, atualizado_em |
-| `testes` | (video_id, nome) → status `ok/at/cr`, detalhe, ordem |
-| `eventos` | ts, etapa, alvo, msg, nivel — alimenta o console |
-| `acoes` | ts, video_id, acao, nota, status_anterior — auditoria das aprovações |
-| `custos` | ts, fornecedor, valor_brl, tokens_in, tokens_out, detalhe |
-| `ativos` | video_id, fonte, url_origem, autor, licenca, caminho, sha256 |
-| `metricas_dia` | data, canal_id, views |
-| `receitas` | mes, fonte, valor_brl, situacao `prevista/aprovada/paga` |
-| `campanhas` | nome, tipo, valor_mil_usd, teto_views, views_aprovadas, horas, situacao |
-| `config` | chave, valor (teto, câmbio, preços, batimento do worker) |
-| `contas` | (canal_id, plataforma) → usuario, url, situacao `planejada/criada/crescendo/monetizando/pausada`, seguranca (2FA), numeros_json |
-| `publicacoes` | (video_id, plataforma) → situacao `pendente/publicado/pulado`, url do post, publicado_em |
-
-Um vídeo vira `publicado` quando sai em ao menos uma plataforma e volta a `aprovado` se todas forem desfeitas.
-
-`videos.status`: `pauta → produzindo ⇄ voce → fila | reprovado → aprovado | rejeitado | refazer → publicado`.
-Etapas: `pauta, roteiro, checagem, quadros, gancho, voz, montagem, testes`; status de etapa: `espera, rodando, voce, feito, erro, pulado`.
-
-## API do painel (JSON, tudo exige sessão)
-| Método e rota | Faz |
-|---|---|
-| `POST /login` · `POST /logout` | sessão (cookie httpOnly, SameSite=Strict) |
-| `GET /api/resumo` | KPIs, "Precisa de você", contagem por etapa, gatilho |
-| `GET /api/fila?aba=fila\|prontos\|reprovados\|agendados` | abas com contagem + cartões |
-| `POST /api/videos/{id}/acao` `{acao, nota?}` | aprovar, refazer, rejeitar, desfazer (grava em `acoes`) |
-| `POST /api/videos/{id}/etapas/gancho/pular` | seguir sem gancho animado |
-| `GET /api/videos/{id}/previa` | MP4 — recusa caminho fora da pasta de dados |
-| `GET /api/producao` · `POST /api/lotes` | vídeos em produção + console; criar lote |
-| `GET /api/canais` · `POST /api/canais/{id}/ligado` | canais e liga/desliga |
-| `GET /api/series` | séries com episódios |
-| `GET /api/dinheiro` | cascata, custos de IA, campanhas |
-| `GET /api/config` · `POST /api/config` | teto, câmbio, preços; chaves só como "configurada sim/não" |
-| `GET /api/saude` | batimento do worker, último evento, disco, FFmpeg, pasta do Drive |
-| `GET /api/plataformas` | cada rede: programa, requisitos, Brasil, links oficiais, metas e a conta de cada canal |
-| `POST /api/contas/{canal}/{plataforma}` | @, link do perfil (https no domínio da rede), situação, 2FA, números |
-| `GET /api/publicar?aba=pendentes\|feitos` | vídeos aprovados × plataformas: legenda pronta, elegibilidade pela duração, situação |
-| `POST /api/publicacoes/{id}/{plataforma}` `{situacao, url?}` | marcar publicado/pulado/pendente; link conferido no domínio da rede |
-| `GET /api/videos/{id}/arquivo` | baixa o MP4 (só aprovado/publicado), nome ASCII seguro |
-
-Todo `POST` exige o cabeçalho `X-Estudio: 1` (defesa contra CSRF junto com SameSite=Strict).
-
-## Estilo de código
-```python
-def validar_roteiro(r: Roteiro, canal: Canal) -> list[str]:
-    """Devolve a lista de problemas; vazia = roteiro aceito."""
-    problemas: list[str] = []
-    palavras = len(r.narracao.split())
-    if not canal.formato.palavras_min <= palavras <= canal.formato.palavras_max:
-        problemas.append(f"narração com {palavras} palavras")
-    if len(r.gancho.split()) > 12:
-        problemas.append("gancho com mais de 12 palavras")
-    if not r.fontes:
-        problemas.append("roteiro sem fontes")
-    return problemas
-```
-- Nomes de domínio em português (canal, roteiro, etapa); type hints em tudo; funções pequenas e puras sempre que possível; I/O nas bordas.
-- `subprocess` sempre com **lista de argumentos** (nunca `shell=True`); nomes de arquivo gerados por UUID.
-- Saída de LLM = entrada não confiável: schema + validação antes de usar.
-- Front: todo texto do banco passa por `esc()` antes de virar HTML.
-- ruff: linha 100, regras `E,F,I,B,UP,S` (exceções de `subprocess` justificadas na linha).
-
-## Estratégia de testes
-- **Unidade (padrão):** validação de roteiro, similaridade, parsers da saída do FFmpeg, construtor do comando de montagem, gerador de ASS, janela de missão, hash de senha, limite de tentativas, guarda de caminho, horário sugerido, ações da fila, CSV do pacote.
-- **API:** `TestClient` com banco temporário — login, 401 sem sessão, 403 sem `X-Estudio`, ações na fila e auditoria, prévia fora da pasta recusada, config sem segredos.
-- **Pipeline:** ciclo do worker com serviços falsos (sem rede, sem FFmpeg).
-- **Integração (marcador `ffmpeg`):** monta um vídeo de 2 s de verdade; pulado se o FFmpeg não estiver instalado.
 
 ## Limites
-- **Sempre:** humano assiste e aprova cada vídeo; validar saída da LLM; registrar licença de cada ativo; segredos só no ambiente; rodar testes antes de commit.
-- **Perguntar antes:** dependência nova; mudança no esquema do banco; publicar via API; subir o teto de gasto.
-- **Nunca:** criar contas ou canais automaticamente; aprovar em lote; publicar sem aprovação; repostar o mesmo vídeo em canais diferentes; responder comentários sem revisão; devolver chaves pela API; expor o painel em porta pública; pedir, guardar ou digitar senha de qualquer plataforma (o painel só abre a página oficial).
+- **Sempre:** testes do motor antes de publicar; todo texto do banco por `esc()`; links validados por domínio.
+- **Perguntar antes:** mudar o modelo de dados; ligar Cloud Functions (custo); trocar o e-mail do dono.
+- **Nunca:** criar contas ou canais automaticamente; aprovar em lote; publicar sem aprovação; repostar o mesmo vídeo em canais diferentes; pedir ou guardar senha de plataforma; chave de API no `web/`.
 
 ## Critérios de sucesso
-1. `uv run pytest -q` verde e `uv run ruff check .` limpo na máquina do dono e no CI.
-2. Com `ESTUDIO_DB=dados/exemplo.db`: `estudio init && estudio seed-exemplo && estudio painel` → login funciona; as telas Visão geral, Aprovação, Produção, Canais, Séries, Dinheiro, Configurações e Saúde mostram os dados de exemplo; aprovar/refazer/rejeitar/desfazer persistem e aparecem na auditoria.
-3. Com chaves e FFmpeg: `estudio gerar --canal curiosidades ... --qtd 1` + worker produz um MP4 1080×1920 com legendas, testes registrados e o vídeo na fila.
-4. Segurança: POST sem `X-Estudio` → 403; sem sessão → 401; 11ª tentativa de login em 15 min → 429; `/api/config` nunca contém chave.
+1. `node --test` verde; CI verde.
+2. Sem `apiKey`: demonstração com todas as telas e ações funcionando no navegador.
+3. Com Firebase: só o e-mail do dono entra; outra conta vê "não tem acesso" e as regras recusam leitura.
+4. Adicionar vídeo pronto (link do Drive) → aprovar → publicar em cada rede → aparece em "Publicados".
 
 ## Perguntas em aberto
-- Nome do modelo Gemini vigente (variável `GEMINI_MODELO`).
-- Voz da Azure preferida e se o bíblico terá a sua voz.
-- Tradução bíblica e licença.
-- Rodar na VPS ou no PC de casa.
-- Regras do Sistema (bloco `sistema:` do YAML bíblico) e a função `deve_abrir_proximo_canal()` — decisões do dono.
+- Regras do "Sistema" do canal bíblico (`sistema` em `dados/canais.json`, hoje `null`).
+- Regra para abrir o 3º canal (o gatilho mostra as 4 condições; a decisão é do dono).
+- Quando ligar a produção automática (Cloud Functions, plano Blaze).
